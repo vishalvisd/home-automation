@@ -2,38 +2,30 @@ from time import sleep
 
 from gpiozero import OutputDevice
 
-
-RELAYS = [
-    ("IN1 - RO power", 2),
-    ("IN2 - Router power", 3),
-    ("IN3 - Camera power", 12),
-    ("IN4 - Plant valve", 13),
-    ("IN5 - Main valve", 26),
-    ("IN6 - Pump", 21),
-]
+from home_automation.config.relays import RELAYS
 
 
 def main() -> None:
-    relays: list[OutputDevice] = []
+    devices: list[OutputDevice] = []
 
     try:
-        for name, gpio_pin in RELAYS:
+        for relay_config in RELAYS:
             relay = OutputDevice(
-                gpio_pin,
-                active_high=False,
+                relay_config.gpio,
+                active_high=not relay_config.active_low,
                 initial_value=False,
             )
-            relays.append(relay)
+            devices.append(relay)
 
-            print(f"Turning ON: {name}")
+            print(f"Turning ON: {relay_config.channel} - {relay_config.name}")
             relay.on()
             sleep(1)
 
-            print(f"Turning OFF: {name}")
+            print(f"Turning OFF: {relay_config.channel} - {relay_config.name}")
             relay.off()
             sleep(1)
     finally:
-        for relay in relays:
+        for relay in devices:
             relay.off()
             relay.close()
 
