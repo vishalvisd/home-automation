@@ -1,4 +1,3 @@
-cat > scripts/setup_pi.sh <<'EOF'
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -23,6 +22,3 @@ cd "$PROJECT_ROOT"
 uv sync --frozen
 
 echo "Raspberry Pi setup completed."
-EOF
-
-chmod +x scripts/setup_pi.sh
