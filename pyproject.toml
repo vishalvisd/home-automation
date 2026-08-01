@@ -8,8 +8,10 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.141.1",
     "gpiozero>=2.0.1.post3",
     "lgpio>=0.2.2.0 ; platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "uvicorn>=0.52.1",
 ]
 
 [project.scripts]
