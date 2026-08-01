@@ -1,0 +1,35 @@
+[relays.ro_power]
+channel = "IN1"
+gpio = 2
+active_low = true
+default_on = false
+
+[relays.router_power]
+channel = "IN2"
+gpio = 3
+active_low = true
+default_on = false
+
+[relays.camera_power]
+channel = "IN3"
+gpio = 12
+active_low = true
+default_on = true
+
+[relays.plant_valve]
+channel = "IN4"
+gpio = 13
+active_low = true
+default_on = false
+
+[relays.main_valve]
+channel = "IN5"
+gpio = 26
+active_low = true
+default_on = false
+
+[relays.pump]
+channel = "IN6"
+gpio = 21
+active_low = true
+default_on = false
