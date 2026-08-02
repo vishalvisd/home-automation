@@ -5,7 +5,9 @@ from fastapi import FastAPI
 
 from home_automation.api.routes import health, relays
 from home_automation.services.relay_manager import RelayManager
+from fastapi.staticfiles import StaticFiles
 
+from home_automation.config.application import FRONTEND_DIST_DIRECTORY
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -35,6 +37,18 @@ def create_app() -> FastAPI:
 
     application.include_router(health.router)
     application.include_router(relays.router)
+
+    # Mount the compiled React application last so API routes and
+    # FastAPI documentation routes continue to take precedence.
+    if FRONTEND_DIST_DIRECTORY.is_dir():
+        application.mount(
+            "/",
+            StaticFiles(
+                directory=FRONTEND_DIST_DIRECTORY,
+                html=True,
+            ),
+            name="frontend",
+        )
 
     return application
 
