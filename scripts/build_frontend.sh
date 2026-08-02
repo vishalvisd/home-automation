@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -eo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -12,7 +12,6 @@ if [ ! -s "$NVM_DIR/nvm.sh" ]; then
 fi
 
 # Node Version Manager is not fully compatible with Bash nounset mode.
-set +u
 source "$NVM_DIR/nvm.sh"
 
 NODE_VERSION="$(cat "$PROJECT_ROOT/.nvmrc")"
@@ -21,7 +20,6 @@ echo "Using Node.js ${NODE_VERSION}"
 nvm install "$NODE_VERSION"
 nvm use "$NODE_VERSION"
 nvm alias default "$NODE_VERSION"
-set -u
 
 cd "$PROJECT_ROOT/frontend"
 
