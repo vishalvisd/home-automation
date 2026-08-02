@@ -21,15 +21,4 @@ export PATH="$HOME/.local/bin:$PATH"
 cd "$PROJECT_ROOT"
 uv sync --frozen
 
-NVM_VERSION="v0.40.6"
-export NVM_DIR="$HOME/.nvm"
-
-if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-  curl -o- \
-    "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" \
-    | bash
-fi
-
-"$PROJECT_ROOT/scripts/build_frontend.sh"
-
 echo "Raspberry Pi setup completed."
