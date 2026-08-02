@@ -30,15 +30,6 @@ if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     | bash
 fi
 
-source "$NVM_DIR/nvm.sh"
-
-cd "$PROJECT_ROOT"
-
-NODE_VERSION="$(cat .nvmrc)"
-
-nvm install "$NODE_VERSION"
-nvm alias default "$NODE_VERSION"
-
 "$PROJECT_ROOT/scripts/build_frontend.sh"
 
 echo "Raspberry Pi setup completed."

@@ -11,23 +11,27 @@ if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   exit 1
 fi
 
-# Load Node Version Manager for this non-interactive script.
+# Node Version Manager is not fully compatible with Bash nounset mode.
+set +u
 source "$NVM_DIR/nvm.sh"
 
-cd "$PROJECT_ROOT"
+NODE_VERSION="$(cat "$PROJECT_ROOT/.nvmrc")"
 
-NODE_VERSION="$(cat .nvmrc)"
-
+echo "Using Node.js ${NODE_VERSION}"
 nvm install "$NODE_VERSION"
 nvm use "$NODE_VERSION"
+nvm alias default "$NODE_VERSION"
+set -u
 
-cd frontend
+cd "$PROJECT_ROOT/frontend"
 
-# package-lock.json provides a repeatable dependency installation.
+echo "Installing frontend dependencies"
 npm ci
+
+echo "Building frontend"
 npm run build
 
-# The production server only needs the generated dist directory.
+# The Raspberry Pi only needs the compiled frontend at runtime.
 rm -rf node_modules
 
 echo "Frontend build completed."
