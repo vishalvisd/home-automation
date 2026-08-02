@@ -66,6 +66,14 @@ RELAYS = (
         active_low=True,
         default_relay_on=False,
     ),
+    RelayConfig(
+        key="valve_power",
+        name="Valve system power",
+        channel="IN8",
+        gpio=16,
+        active_low=True,
+        default_relay_on=False,
+    ),
 )
 
 

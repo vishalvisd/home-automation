@@ -5,6 +5,7 @@ import {
   Leaf,
   Router,
   Waves,
+  Zap,
 } from "lucide-react";
 
 export const RELAYS = [
@@ -61,5 +62,14 @@ export const RELAYS = [
     icon: Gauge,
     description: "Controls the overhead-tank pump circuit.",
     wiringNote: "Relay ON activates the pump control circuit.",
+  },
+  {
+    key: "valve_power",
+    name: "Valve System Power",
+    channel: "IN8",
+    gpio: 16,
+    icon: Zap,
+    description: "Supplies power to the main valve and plant valve circuits.",
+    wiringNote: "Relay ON supplies power through the normally open contact.",
   },
 ];
