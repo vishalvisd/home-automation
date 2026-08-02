@@ -34,3 +34,37 @@ export async function sendRelayCommand(relayKey, command) {
 
   return response.json();
 }
+
+export async function getWateringStatus() {
+  const response = await fetch("/api/watering/status");
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json();
+}
+
+export async function startWatering() {
+  const response = await fetch("/api/watering/start", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json();
+}
+
+export async function stopWatering() {
+  const response = await fetch("/api/watering/stop", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json();
+}

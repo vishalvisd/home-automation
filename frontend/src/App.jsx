@@ -9,6 +9,7 @@ import {
 import RelayCard from "./components/RelayCard";
 import { RELAYS } from "./config/relays";
 import { getBackendHealth } from "./services/relayApi";
+import WateringPanel from "./components/WateringPanel";
 
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
@@ -91,6 +92,7 @@ export default function App() {
           </div>
         </header>
 
+        <WateringPanel />
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {RELAYS.map((relay) => (
             <RelayCard key={relay.key} relay={relay} />
