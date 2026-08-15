@@ -7,6 +7,7 @@ from home_automation.api.routes import health, relays, watering
 from home_automation.services.watering_service import WateringService
 from home_automation.services.relay_manager import RelayManager
 from fastapi.staticfiles import StaticFiles
+from home_automation.config.logging import configure_logging
 
 from home_automation.config.application import FRONTEND_DIST_DIRECTORY
 
@@ -34,7 +35,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-
+    configure_logging()
+    
     application = FastAPI(
         title="Home Automation",
         lifespan=lifespan,
