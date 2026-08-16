@@ -17,6 +17,9 @@ from collections.abc import Callable
 from home_automation.services.camera_upload_service import (
     CameraUploadService,
 )
+from home_automation.services.camera_stream_source import (
+    CameraStreamSource,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +44,7 @@ class CameraRecorderUnavailableError(RuntimeError):
 
 
 class CameraRecorder:
-    """Own one GStreamer recording pipeline for one camera."""
+    """Encode and segment frames from a reconnectable camera stream."""
 
     STOP_TIMEOUT_SECONDS = 10
 
@@ -62,6 +65,7 @@ class CameraRecorder:
         self._stop_event = Event()
 
         self._pipeline: Any = None
+        self._frame_source: Any = None
         self._thread: Thread | None = None
 
         self._running = False
@@ -70,6 +74,12 @@ class CameraRecorder:
         self._last_completed_fragment: str | None = None
         self._on_fragment_closed = (
             on_fragment_closed
+        )
+
+        self._stream_source = CameraStreamSource(
+            camera,
+            Gst,
+            self._push_frame,
         )
 
     def start(self) -> None:
@@ -104,6 +114,15 @@ class CameraRecorder:
                     pipeline_description
                 )
 
+                frame_source = pipeline.get_by_name(
+                    "frame_source"
+                )
+
+                if frame_source is None:
+                    raise RuntimeError(
+                        "Unable to find recording appsrc."
+                    )
+
                 segmenter = pipeline.get_by_name(
                     "segmenter"
                 )
@@ -120,6 +139,7 @@ class CameraRecorder:
                 )
 
                 self._pipeline = pipeline
+                self._frame_source = frame_source
                 self._stop_event.clear()
                 self._last_error = None
 
@@ -147,6 +167,7 @@ class CameraRecorder:
                 )
 
                 self._thread.start()
+                self._stream_source.start()
 
                 LOGGER.info(
                     "Camera recorder started: %s",
@@ -155,19 +176,28 @@ class CameraRecorder:
 
             except Exception as error:
                 self._last_error = str(error)
+
+                if self._pipeline is not None:
+                    self._pipeline.set_state(
+                        Gst.State.NULL
+                    )
+
                 self._pipeline = None
+                self._frame_source = None
                 self._running = False
                 raise
 
     def stop(self) -> None:
         with self._lock:
-            if not self._running:
-                return
-
             self._stop_event.set()
             thread = self._thread
+            running = self._running
 
-        if thread is not None:
+        # Stop collecting frames first. The recording pipeline then receives
+        # EOS and closes the final non-empty segment cleanly.
+        self._stream_source.stop()
+
+        if running and thread is not None:
             thread.join(
                 timeout=self.STOP_TIMEOUT_SECONDS + 2
             )
@@ -182,8 +212,12 @@ class CameraRecorder:
                 )
 
                 self._running = False
+                self._pipeline = None
+                self._frame_source = None
 
     def status(self) -> dict[str, object]:
+        stream_status = self._stream_source.status()
+
         with self._lock:
             return {
                 "key": self._camera.key,
@@ -197,17 +231,13 @@ class CameraRecorder:
                 "last_completed_fragment": (
                     self._last_completed_fragment
                 ),
+                **stream_status,
             }
 
     def _build_pipeline_description(
         self,
         camera_directory: Path,
     ) -> str:
-        stream_url = (
-            f"http://{self._camera.host}"
-            f"{self._camera.stream_path}"
-        )
-
         segment_nanoseconds = (
             self._settings.segment_seconds
             * 1_000_000_000
@@ -224,17 +254,25 @@ class CameraRecorder:
         )
 
         return (
-            f'souphttpsrc '
-            f'location="{stream_url}" '
+            f'appsrc '
+            f'name=frame_source '
             f'is-live=true '
+            f'format=time '
             f'do-timestamp=true '
-            f'timeout=15 '
-            f'! multipartdemux '
-            f'! image/jpeg '
-            f'! jpegdec '
+            f'min-latency=0 '
+            f'block=false '
+            f'emit-signals=false '
+            f'caps="image/jpeg,'
+            f'framerate={self._settings.frame_rate}/1" '
+            f'! queue '
+            f'max-size-buffers=2 '
+            f'max-size-bytes=0 '
+            f'max-size-time=0 '
+            f'leaky=downstream '
             f'! videorate '
-            f'! video/x-raw,'
-            f'framerate={self._settings.frame_rate}/1 '
+            f'drop-only=true '
+            f'max-rate={self._settings.frame_rate} '
+            f'! jpegdec '
             f'! videoconvert '
             f'! x264enc '
             f'bitrate={self._settings.video_bitrate_kbps} '
@@ -250,6 +288,45 @@ class CameraRecorder:
             f'send-keyframe-requests=true '
             f'location="{location}"'
         )
+
+    def _push_frame(self, buffer: Any) -> None:
+        with self._lock:
+            frame_source = self._frame_source
+            running = self._running
+
+        if (
+            not running
+            or frame_source is None
+            or self._stop_event.is_set()
+        ):
+            return
+
+        # The HTTP capture pipeline has a different clock. Clear its
+        # timestamps so appsrc stamps each received JPEG with the long-lived
+        # recording pipeline's running time. Network outages therefore become
+        # timestamp gaps; no missing frames are fabricated.
+        frame = buffer.copy()
+        frame.pts = Gst.CLOCK_TIME_NONE
+        frame.dts = Gst.CLOCK_TIME_NONE
+        frame.duration = (
+            Gst.SECOND
+            // max(self._settings.frame_rate, 1)
+        )
+
+        result = frame_source.emit(
+            "push-buffer",
+            frame,
+        )
+
+        if (
+            result != Gst.FlowReturn.OK
+            and not self._stop_event.is_set()
+        ):
+            LOGGER.warning(
+                "Camera frame was not accepted by recorder [%s]: %s",
+                self._camera.name,
+                result,
+            )
 
     def _format_fragment_location(
         self,
@@ -284,9 +361,16 @@ class CameraRecorder:
                     self._stop_event.is_set()
                     and not eos_sent
                 ):
-                    pipeline.send_event(
-                        Gst.Event.new_eos()
-                    )
+                    frame_source = self._frame_source
+
+                    if frame_source is not None:
+                        frame_source.emit(
+                            "end-of-stream"
+                        )
+                    else:
+                        pipeline.send_event(
+                            Gst.Event.new_eos()
+                        )
 
                     eos_sent = True
                     stop_requested_at = monotonic()
@@ -340,6 +424,8 @@ class CameraRecorder:
                     )
 
         finally:
+            self._stream_source.stop()
+
             pipeline.set_state(
                 Gst.State.NULL
             )
@@ -347,6 +433,7 @@ class CameraRecorder:
             with self._lock:
                 self._running = False
                 self._pipeline = None
+                self._frame_source = None
 
             LOGGER.info(
                 "Camera recorder stopped: %s",
@@ -375,6 +462,23 @@ class CameraRecorder:
         if not location:
             return
 
+        file_path = Path(location)
+
+        # Normally splitmuxsink does not create a fragment until a frame has
+        # arrived. Keep this guard so an empty file is never uploaded.
+        if (
+            not file_path.exists()
+            or file_path.stat().st_size == 0
+        ):
+            file_path.unlink(missing_ok=True)
+
+            LOGGER.info(
+                "Empty camera segment discarded [%s]: %s",
+                self._camera.name,
+                location,
+            )
+            return
+
         with self._lock:
             self._last_completed_fragment = location
 
@@ -391,7 +495,7 @@ class CameraRecorder:
             try:
                 self._on_fragment_closed(
                     self._camera,
-                    Path(location),
+                    file_path,
                 )
             except Exception:
                 LOGGER.exception(
@@ -536,6 +640,9 @@ class CameraRecorderService:
                             "last_error": None,
                             "current_fragment": None,
                             "last_completed_fragment": None,
+                            "stream_connected": False,
+                            "stream_reconnect_count": 0,
+                            "last_stream_error": None,
                             "restart_count": restart_count,
                         }
                     )
