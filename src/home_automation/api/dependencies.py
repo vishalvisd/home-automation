@@ -12,6 +12,14 @@ from home_automation.services.watering_settings_service import (
     WateringSettingsService,
 )
 
+from home_automation.services.camera_recorder_service import (
+    CameraRecorderService,
+)
+from home_automation.services.camera_settings_service import (
+    CameraSettingsService,
+)
+
+
 def get_relay_manager(request: Request) -> RelayManager:
     """Return the application-wide relay manager."""
 
@@ -38,3 +46,13 @@ def get_automation_script_service(
     request: Request,
 ) -> AutomationScriptService:
     return request.app.state.automation_script_service
+
+def get_camera_settings_service(
+    request: Request,
+) -> CameraSettingsService:
+    return request.app.state.camera_settings_service
+
+def get_camera_recorder_service(
+    request: Request,
+) -> CameraRecorderService:
+    return request.app.state.camera_recorder_service

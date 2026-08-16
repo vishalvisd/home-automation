@@ -6,11 +6,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import AutomationsPanel from "./components/AutomationsPanel";
+import CameraPanel from "./components/CameraPanel";
 import RelayCard from "./components/RelayCard";
+import WateringPanel from "./components/WateringPanel";
 import { RELAYS } from "./config/relays";
 import { getBackendHealth } from "./services/relayApi";
-import WateringPanel from "./components/WateringPanel";
-import AutomationsPanel from "./components/AutomationsPanel";
 
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
@@ -94,6 +95,7 @@ export default function App() {
         </header>
 
         <WateringPanel />
+        <CameraPanel />
         <AutomationsPanel />
         <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {RELAYS.map((relay) => (

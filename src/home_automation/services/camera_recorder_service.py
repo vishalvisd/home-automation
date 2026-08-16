@@ -1,0 +1,680 @@
+import logging
+
+from datetime import datetime
+from pathlib import Path
+from threading import Event, RLock, Thread
+from time import monotonic
+from typing import Any
+
+from home_automation.config.camera_settings import (
+    CameraConfig,
+    CameraSettings,
+)
+from home_automation.services.camera_settings_service import (
+    CameraSettingsService,
+)
+
+
+LOGGER = logging.getLogger(__name__)
+
+try:
+    import gi
+
+    gi.require_version("Gst", "1.0")
+
+    from gi.repository import Gst
+
+except (ImportError, ValueError) as error:
+    Gst = None
+    GST_IMPORT_ERROR = error
+
+else:
+    GST_IMPORT_ERROR = None
+    Gst.init(None)
+
+
+class CameraRecorderUnavailableError(RuntimeError):
+    """Raised when GStreamer Python bindings are unavailable."""
+
+
+class CameraRecorder:
+    """Own one GStreamer recording pipeline for one camera."""
+
+    STOP_TIMEOUT_SECONDS = 10
+
+    def __init__(
+        self,
+        camera: CameraConfig,
+        settings: CameraSettings,
+    ) -> None:
+        self._camera = camera
+        self._settings = settings
+
+        self._lock = RLock()
+        self._stop_event = Event()
+
+        self._pipeline: Any = None
+        self._thread: Thread | None = None
+
+        self._running = False
+        self._last_error: str | None = None
+        self._current_fragment: str | None = None
+        self._last_completed_fragment: str | None = None
+
+    def start(self) -> None:
+        if Gst is None:
+            raise CameraRecorderUnavailableError(
+                f"GStreamer Python bindings unavailable: "
+                f"{GST_IMPORT_ERROR}"
+            )
+
+        with self._lock:
+            if self._running:
+                return
+
+            camera_directory = (
+                Path(self._settings.recording_directory)
+                / self._camera.key
+            )
+
+            camera_directory.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            pipeline_description = (
+                self._build_pipeline_description(
+                    camera_directory
+                )
+            )
+
+            try:
+                pipeline = Gst.parse_launch(
+                    pipeline_description
+                )
+
+                segmenter = pipeline.get_by_name(
+                    "segmenter"
+                )
+
+                if segmenter is None:
+                    raise RuntimeError(
+                        "Unable to find splitmuxsink."
+                    )
+
+                segmenter.connect(
+                    "format-location",
+                    self._format_fragment_location,
+                    camera_directory,
+                )
+
+                self._pipeline = pipeline
+                self._stop_event.clear()
+                self._last_error = None
+
+                result = pipeline.set_state(
+                    Gst.State.PLAYING
+                )
+
+                if result == Gst.StateChangeReturn.FAILURE:
+                    pipeline.set_state(
+                        Gst.State.NULL
+                    )
+                    raise RuntimeError(
+                        "GStreamer pipeline failed to start."
+                    )
+
+                self._running = True
+
+                self._thread = Thread(
+                    target=self._monitor_pipeline,
+                    name=(
+                        f"camera-recorder-"
+                        f"{self._camera.key}"
+                    ),
+                    daemon=True,
+                )
+
+                self._thread.start()
+
+                LOGGER.info(
+                    "Camera recorder started: %s",
+                    self._camera.name,
+                )
+
+            except Exception as error:
+                self._last_error = str(error)
+                self._pipeline = None
+                self._running = False
+                raise
+
+    def stop(self) -> None:
+        with self._lock:
+            if not self._running:
+                return
+
+            self._stop_event.set()
+            thread = self._thread
+
+        if thread is not None:
+            thread.join(
+                timeout=self.STOP_TIMEOUT_SECONDS + 2
+            )
+
+        with self._lock:
+            if (
+                self._pipeline is not None
+                and self._running
+            ):
+                self._pipeline.set_state(
+                    Gst.State.NULL
+                )
+
+                self._running = False
+
+    def status(self) -> dict[str, object]:
+        with self._lock:
+            return {
+                "key": self._camera.key,
+                "name": self._camera.name,
+                "host": self._camera.host,
+                "running": self._running,
+                "last_error": self._last_error,
+                "current_fragment": (
+                    self._current_fragment
+                ),
+                "last_completed_fragment": (
+                    self._last_completed_fragment
+                ),
+            }
+
+    def _build_pipeline_description(
+        self,
+        camera_directory: Path,
+    ) -> str:
+        stream_url = (
+            f"http://{self._camera.host}"
+            f"{self._camera.stream_path}"
+        )
+
+        segment_nanoseconds = (
+            self._settings.segment_seconds
+            * 1_000_000_000
+        )
+
+        keyframe_interval = max(
+            self._settings.frame_rate,
+            1,
+        )
+
+        location = (
+            camera_directory
+            / "segment-%05d.ts"
+        )
+
+        return (
+            f'souphttpsrc '
+            f'location="{stream_url}" '
+            f'is-live=true '
+            f'do-timestamp=true '
+            f'timeout=15 '
+            f'! multipartdemux '
+            f'! image/jpeg '
+            f'! jpegdec '
+            f'! videorate '
+            f'! video/x-raw,'
+            f'framerate={self._settings.frame_rate}/1 '
+            f'! videoconvert '
+            f'! x264enc '
+            f'bitrate={self._settings.video_bitrate_kbps} '
+            f'speed-preset=ultrafast '
+            f'tune=zerolatency '
+            f'key-int-max={keyframe_interval} '
+            f'! h264parse config-interval=-1 '
+            f'! splitmuxsink '
+            f'name=segmenter '
+            f'muxer=mpegtsmux '
+            f'max-size-time={segment_nanoseconds} '
+            f'max-size-bytes=0 '
+            f'send-keyframe-requests=true '
+            f'location="{location}"'
+        )
+
+    def _format_fragment_location(
+        self,
+        _segmenter: Any,
+        fragment_id: int,
+        camera_directory: Path,
+    ) -> str:
+        timestamp = datetime.now().strftime(
+            "%Y%m%d_%H%M%S_%f"
+        )
+
+        path = camera_directory / (
+            f"{timestamp}_"
+            f"{fragment_id:06d}.ts"
+        )
+
+        with self._lock:
+            self._current_fragment = str(path)
+
+        return str(path)
+
+    def _monitor_pipeline(self) -> None:
+        pipeline = self._pipeline
+        bus = pipeline.get_bus()
+
+        stop_requested_at: float | None = None
+        eos_sent = False
+
+        try:
+            while True:
+                if (
+                    self._stop_event.is_set()
+                    and not eos_sent
+                ):
+                    pipeline.send_event(
+                        Gst.Event.new_eos()
+                    )
+
+                    eos_sent = True
+                    stop_requested_at = monotonic()
+
+                message = bus.timed_pop_filtered(
+                    500 * Gst.MSECOND,
+                    (
+                        Gst.MessageType.ERROR
+                        | Gst.MessageType.EOS
+                        | Gst.MessageType.ELEMENT
+                    ),
+                )
+
+                if message is None:
+                    if (
+                        stop_requested_at is not None
+                        and monotonic()
+                        - stop_requested_at
+                        >= self.STOP_TIMEOUT_SECONDS
+                    ):
+                        LOGGER.warning(
+                            "Timed out waiting for camera "
+                            "pipeline to stop: %s",
+                            self._camera.name,
+                        )
+                        break
+
+                    continue
+
+                if message.type == Gst.MessageType.ERROR:
+                    error, debug = message.parse_error()
+
+                    self._last_error = (
+                        f"{error}: {debug or ''}".strip()
+                    )
+
+                    LOGGER.error(
+                        "Camera recorder error [%s]: %s",
+                        self._camera.name,
+                        self._last_error,
+                    )
+
+                    break
+
+                if message.type == Gst.MessageType.EOS:
+                    break
+
+                if message.type == Gst.MessageType.ELEMENT:
+                    self._handle_element_message(
+                        message
+                    )
+
+        finally:
+            pipeline.set_state(
+                Gst.State.NULL
+            )
+
+            with self._lock:
+                self._running = False
+                self._pipeline = None
+
+            LOGGER.info(
+                "Camera recorder stopped: %s",
+                self._camera.name,
+            )
+
+    def _handle_element_message(
+        self,
+        message: Any,
+    ) -> None:
+        structure = message.get_structure()
+
+        if structure is None:
+            return
+
+        if (
+            structure.get_name()
+            != "splitmuxsink-fragment-closed"
+        ):
+            return
+
+        location = structure.get_string(
+            "location"
+        )
+
+        if not location:
+            return
+
+        with self._lock:
+            self._last_completed_fragment = location
+
+            if self._current_fragment == location:
+                self._current_fragment = None
+
+
+class CameraRecorderService:
+    """Manage and automatically recover CCTV recording pipelines."""
+
+    SUPERVISOR_CHECK_SECONDS = 2
+
+    def __init__(
+        self,
+        settings_service: CameraSettingsService,
+    ) -> None:
+        self._settings_service = settings_service
+        self._lock = RLock()
+
+        self._recorders: dict[
+            str,
+            CameraRecorder,
+        ] = {}
+
+        self._next_retry_at: dict[
+            str,
+            float,
+        ] = {}
+
+        self._restart_counts: dict[
+            str,
+            int,
+        ] = {}
+
+        # "Desired running" is deliberately separate from
+        # settings.recording_enabled.
+        #
+        # recording_enabled controls automatic startup when
+        # FastAPI starts.
+        #
+        # desired_running becomes True after either automatic
+        # startup or the user presses "Start Recording".
+        self._desired_running = False
+
+        self._shutdown_event = Event()
+
+        self._supervisor_thread = Thread(
+            target=self._supervisor_loop,
+            name="camera-recorder-supervisor",
+            daemon=True,
+        )
+
+        self._supervisor_thread.start()
+
+    def start(self) -> dict:
+        settings = self._settings_service.get()
+
+        with self._lock:
+            self._desired_running = True
+
+        for camera in settings.cameras:
+            if camera.enabled:
+                self._start_camera(
+                    camera,
+                    settings,
+                    is_recovery=False,
+                )
+
+        return self.status()
+
+    def stop(self) -> dict:
+        # Set this before stopping pipelines so the supervisor
+        # cannot restart them while Stop Recording is running.
+        with self._lock:
+            self._desired_running = False
+            self._next_retry_at.clear()
+
+            recorders = list(
+                self._recorders.values()
+            )
+
+        for recorder in recorders:
+            recorder.stop()
+
+        return self.status()
+
+    def start_if_enabled(self) -> None:
+        settings = self._settings_service.get()
+
+        if settings.recording_enabled:
+            self.start()
+
+    def shutdown(self) -> None:
+        self.stop()
+
+        self._shutdown_event.set()
+
+        if self._supervisor_thread.is_alive():
+            self._supervisor_thread.join(
+                timeout=self.SUPERVISOR_CHECK_SECONDS + 2
+            )
+
+    def status(self) -> dict:
+        settings = self._settings_service.get()
+
+        camera_statuses = []
+
+        with self._lock:
+            desired_running = self._desired_running
+
+            for camera in settings.cameras:
+                recorder = self._recorders.get(
+                    camera.key
+                )
+
+                restart_count = (
+                    self._restart_counts.get(
+                        camera.key,
+                        0,
+                    )
+                )
+
+                if recorder is None:
+                    camera_statuses.append(
+                        {
+                            "key": camera.key,
+                            "name": camera.name,
+                            "host": camera.host,
+                            "enabled": camera.enabled,
+                            "running": False,
+                            "last_error": None,
+                            "current_fragment": None,
+                            "last_completed_fragment": None,
+                            "restart_count": restart_count,
+                        }
+                    )
+
+                else:
+                    recorder_status = (
+                        recorder.status()
+                    )
+
+                    recorder_status["enabled"] = (
+                        camera.enabled
+                    )
+
+                    recorder_status[
+                        "restart_count"
+                    ] = restart_count
+
+                    camera_statuses.append(
+                        recorder_status
+                    )
+
+        return {
+            "gstreamer_available": (
+                Gst is not None
+            ),
+            "gstreamer_error": (
+                None
+                if GST_IMPORT_ERROR is None
+                else str(GST_IMPORT_ERROR)
+            ),
+            "recording_enabled": (
+                settings.recording_enabled
+            ),
+            "desired_running": (
+                desired_running
+            ),
+            "recording_directory": (
+                settings.recording_directory
+            ),
+            "recorder_restart_delay_seconds": (
+                settings.recorder_restart_delay_seconds
+            ),
+            "cameras": camera_statuses,
+        }
+
+    def _supervisor_loop(self) -> None:
+        LOGGER.info(
+            "Camera recorder supervisor started"
+        )
+
+        while not self._shutdown_event.is_set():
+            try:
+                self._supervise_once()
+
+            except Exception:
+                LOGGER.exception(
+                    "Unexpected camera recorder "
+                    "supervisor error"
+                )
+
+            self._shutdown_event.wait(
+                timeout=self.SUPERVISOR_CHECK_SECONDS
+            )
+
+        LOGGER.info(
+            "Camera recorder supervisor stopped"
+        )
+
+    def _supervise_once(self) -> None:
+        with self._lock:
+            if not self._desired_running:
+                return
+
+        settings = self._settings_service.get()
+        now = monotonic()
+
+        for camera in settings.cameras:
+            if not camera.enabled:
+                continue
+
+            with self._lock:
+                recorder = self._recorders.get(
+                    camera.key
+                )
+
+                next_retry = (
+                    self._next_retry_at.get(
+                        camera.key,
+                        0,
+                    )
+                )
+
+            if (
+                recorder is not None
+                and recorder.status()["running"]
+            ):
+                continue
+
+            if now < next_retry:
+                continue
+
+            LOGGER.warning(
+                "Camera recorder is not running; "
+                "attempting recovery: %s",
+                camera.name,
+            )
+
+            self._start_camera(
+                camera,
+                settings,
+                is_recovery=True,
+            )
+
+    def _start_camera(
+        self,
+        camera: CameraConfig,
+        settings: CameraSettings,
+        *,
+        is_recovery: bool,
+    ) -> None:
+        with self._lock:
+            existing = self._recorders.get(
+                camera.key
+            )
+
+            if (
+                existing is not None
+                and existing.status()["running"]
+            ):
+                return
+
+            recorder = CameraRecorder(
+                camera,
+                settings,
+            )
+
+            self._recorders[camera.key] = (
+                recorder
+            )
+
+        try:
+            recorder.start()
+
+        except Exception:
+            LOGGER.exception(
+                "Unable to start recorder: %s",
+                camera.name,
+            )
+
+            with self._lock:
+                self._next_retry_at[
+                    camera.key
+                ] = (
+                    monotonic()
+                    + settings.recorder_restart_delay_seconds
+                )
+
+            return
+
+        with self._lock:
+            self._next_retry_at.pop(
+                camera.key,
+                None,
+            )
+
+            if is_recovery:
+                self._restart_counts[
+                    camera.key
+                ] = (
+                    self._restart_counts.get(
+                        camera.key,
+                        0,
+                    )
+                    + 1
+                )
+
+        if is_recovery:
+            LOGGER.info(
+                "Camera recorder recovered: %s",
+                camera.name,
+            )
