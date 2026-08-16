@@ -100,6 +100,11 @@ class CameraPresetService:
         }
 
     def _run_loop(self) -> None:
+        # Give cameras and recording streams time to settle after backend
+        # startup before making control API requests.
+        if self._stop_event.wait(timeout=30):
+            return
+
         while not self._stop_event.is_set():
             try:
                 self._check_presets()
