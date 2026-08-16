@@ -68,3 +68,29 @@ export async function stopWatering() {
 
   return response.json();
 }
+
+export async function getWateringSettings() {
+  const response = await fetch("/api/watering/settings");
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json();
+}
+
+export async function saveWateringSettings(settings) {
+  const response = await fetch("/api/watering/settings", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(settings),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json();
+}
