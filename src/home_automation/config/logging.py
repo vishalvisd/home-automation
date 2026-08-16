@@ -28,7 +28,7 @@ def configure_logging() -> None:
 
     # Send home-automation application logs through the same
     # handler used by Uvicorn.
-    uvicorn_logger = logging.getLogger("uvicorn.error")
+    uvicorn_logger = logging.getLogger("uvicorn")
     application_logger = logging.getLogger("home_automation")
 
     application_logger.setLevel(logging.INFO)
