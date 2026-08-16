@@ -68,6 +68,10 @@ class CameraRecorder:
         self._frame_source: Any = None
         self._thread: Thread | None = None
 
+        # Media time advances only when a camera frame is received.
+        # Network outages therefore do not create timestamp gaps.
+        self._next_frame_timestamp = 0
+
         self._running = False
         self._last_error: str | None = None
         self._current_fragment: str | None = None
@@ -140,6 +144,7 @@ class CameraRecorder:
 
                 self._pipeline = pipeline
                 self._frame_source = frame_source
+                self._next_frame_timestamp = 0
                 self._stop_event.clear()
                 self._last_error = None
 
@@ -256,10 +261,9 @@ class CameraRecorder:
         return (
             f'appsrc '
             f'name=frame_source '
-            f'is-live=true '
+            f'is-live=false '
             f'format=time '
-            f'do-timestamp=true '
-            f'min-latency=0 '
+            f'do-timestamp=false '
             f'block=false '
             f'emit-signals=false '
             f'caps="image/jpeg,'
@@ -294,24 +298,33 @@ class CameraRecorder:
             frame_source = self._frame_source
             running = self._running
 
-        if (
-            not running
-            or frame_source is None
-            or self._stop_event.is_set()
-        ):
-            return
+            if (
+                not running
+                or frame_source is None
+                or self._stop_event.is_set()
+            ):
+                return
 
-        # The HTTP capture pipeline has a different clock. Clear its
-        # timestamps so appsrc stamps each received JPEG with the long-lived
-        # recording pipeline's running time. Network outages therefore become
-        # timestamp gaps; no missing frames are fabricated.
+            frame_duration = (
+                Gst.SECOND
+                // max(self._settings.frame_rate, 1)
+            )
+
+            frame_timestamp = (
+                self._next_frame_timestamp
+            )
+
+            self._next_frame_timestamp += (
+                frame_duration
+            )
+
         frame = buffer.copy()
-        frame.pts = Gst.CLOCK_TIME_NONE
-        frame.dts = Gst.CLOCK_TIME_NONE
-        frame.duration = (
-            Gst.SECOND
-            // max(self._settings.frame_rate, 1)
-        )
+
+        # Every frame that actually arrives gets the next media timestamp.
+        # Missing/network-lost frames simply do not exist in the recording.
+        frame.pts = frame_timestamp
+        frame.dts = frame_timestamp
+        frame.duration = frame_duration
 
         result = frame_source.emit(
             "push-buffer",
