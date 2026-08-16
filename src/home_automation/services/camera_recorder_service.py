@@ -375,6 +375,7 @@ class CameraRecorderService:
     """Manage and automatically recover CCTV recording pipelines."""
 
     SUPERVISOR_CHECK_SECONDS = 2
+    RECOVERY_CONFIRM_SECONDS = 5
 
     def __init__(
         self,
@@ -396,6 +397,11 @@ class CameraRecorderService:
         self._restart_counts: dict[
             str,
             int,
+        ] = {}
+
+        self._recovery_pending_since: dict[
+            str,
+            float,
         ] = {}
 
         # "Desired running" is deliberately separate from
@@ -440,6 +446,7 @@ class CameraRecorderService:
         with self._lock:
             self._desired_running = False
             self._next_retry_at.clear()
+            self._recovery_pending_since.clear()
 
             recorders = list(
                 self._recorders.values()
@@ -582,25 +589,102 @@ class CameraRecorderService:
                     camera.key
                 )
 
-                next_retry = (
-                    self._next_retry_at.get(
-                        camera.key,
-                        0,
+                next_retry = self._next_retry_at.get(
+                    camera.key
+                )
+
+                recovery_pending_since = (
+                    self._recovery_pending_since.get(
+                        camera.key
                     )
                 )
 
-            if (
+            running = (
                 recorder is not None
                 and recorder.status()["running"]
-            ):
+            )
+
+            if running:
+                if (
+                    recovery_pending_since is not None
+                    and (
+                        now - recovery_pending_since
+                        >= self.RECOVERY_CONFIRM_SECONDS
+                    )
+                ):
+                    with self._lock:
+                        self._recovery_pending_since.pop(
+                            camera.key,
+                            None,
+                        )
+
+                        self._restart_counts[
+                            camera.key
+                        ] = (
+                            self._restart_counts.get(
+                                camera.key,
+                                0,
+                            )
+                            + 1
+                        )
+
+                    LOGGER.info(
+                        "Camera recorder recovered: %s",
+                        camera.name,
+                    )
+
+                continue
+
+            # A recovery attempt started, but the pipeline died
+            # before remaining healthy long enough to confirm it.
+            if recovery_pending_since is not None:
+                with self._lock:
+                    self._recovery_pending_since.pop(
+                        camera.key,
+                        None,
+                    )
+
+                    self._next_retry_at[
+                        camera.key
+                    ] = (
+                        now
+                        + settings.recorder_restart_delay_seconds
+                    )
+
+                LOGGER.warning(
+                    "Camera recorder recovery failed; "
+                    "retrying in %s seconds: %s",
+                    settings.recorder_restart_delay_seconds,
+                    camera.name,
+                )
+
+                continue
+
+            # First observation of a failed recorder.
+            # Start the configured retry timer.
+            if next_retry is None:
+                with self._lock:
+                    self._next_retry_at[
+                        camera.key
+                    ] = (
+                        now
+                        + settings.recorder_restart_delay_seconds
+                    )
+
+                LOGGER.warning(
+                    "Camera recorder is not running; "
+                    "retrying in %s seconds: %s",
+                    settings.recorder_restart_delay_seconds,
+                    camera.name,
+                )
+
                 continue
 
             if now < next_retry:
                 continue
 
             LOGGER.warning(
-                "Camera recorder is not running; "
-                "attempting recovery: %s",
+                "Attempting camera recorder recovery: %s",
                 camera.name,
             )
 
@@ -663,18 +747,6 @@ class CameraRecorderService:
             )
 
             if is_recovery:
-                self._restart_counts[
+                self._recovery_pending_since[
                     camera.key
-                ] = (
-                    self._restart_counts.get(
-                        camera.key,
-                        0,
-                    )
-                    + 1
-                )
-
-        if is_recovery:
-            LOGGER.info(
-                "Camera recorder recovered: %s",
-                camera.name,
-            )
+                ] = monotonic()
