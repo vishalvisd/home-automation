@@ -72,6 +72,10 @@ class CameraRecorder:
         # Network outages therefore do not create timestamp gaps.
         self._next_frame_timestamp = 0
 
+        # Segment boundaries use wall-clock time independently from media
+        # timestamps. This counts whether the current window received data.
+        self._frames_in_segment_window = 0
+
         self._running = False
         self._last_error: str | None = None
         self._current_fragment: str | None = None
@@ -145,6 +149,7 @@ class CameraRecorder:
                 self._pipeline = pipeline
                 self._frame_source = frame_source
                 self._next_frame_timestamp = 0
+                self._frames_in_segment_window = 0
                 self._stop_event.clear()
                 self._last_error = None
 
@@ -243,11 +248,6 @@ class CameraRecorder:
         self,
         camera_directory: Path,
     ) -> str:
-        segment_nanoseconds = (
-            self._settings.segment_seconds
-            * 1_000_000_000
-        )
-
         keyframe_interval = max(
             self._settings.frame_rate,
             1,
@@ -287,9 +287,8 @@ class CameraRecorder:
             f'! splitmuxsink '
             f'name=segmenter '
             f'muxer=mpegtsmux '
-            f'max-size-time={segment_nanoseconds} '
+            f'max-size-time=0 '
             f'max-size-bytes=0 '
-            f'send-keyframe-requests=true '
             f'location="{location}"'
         )
 
@@ -317,6 +316,8 @@ class CameraRecorder:
             self._next_frame_timestamp += (
                 frame_duration
             )
+
+            self._frames_in_segment_window += 1
 
         frame = buffer.copy()
 
@@ -364,12 +365,44 @@ class CameraRecorder:
     def _monitor_pipeline(self) -> None:
         pipeline = self._pipeline
         bus = pipeline.get_bus()
+        segmenter = pipeline.get_by_name("segmenter")
 
         stop_requested_at: float | None = None
         eos_sent = False
+        next_segment_boundary = (
+            monotonic()
+            + self._settings.segment_seconds
+        )
 
         try:
             while True:
+                now = monotonic()
+
+                if (
+                    not self._stop_event.is_set()
+                    and now >= next_segment_boundary
+                ):
+                    with self._lock:
+                        frames_in_window = (
+                            self._frames_in_segment_window
+                        )
+                        self._frames_in_segment_window = 0
+
+                    if frames_in_window > 0:
+                        segmenter.emit("split-now")
+
+                        LOGGER.info(
+                            "Camera segment window elapsed [%s]: "
+                            "%s frame(s) received",
+                            self._camera.name,
+                            frames_in_window,
+                        )
+
+                    while next_segment_boundary <= now:
+                        next_segment_boundary += (
+                            self._settings.segment_seconds
+                        )
+
                 if (
                     self._stop_event.is_set()
                     and not eos_sent
