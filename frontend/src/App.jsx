@@ -13,8 +13,28 @@ import WateringPanel from "./components/WateringPanel";
 import { RELAYS } from "./config/relays";
 import { getBackendHealth } from "./services/relayApi";
 
+const TABS = [
+  {
+    key: "relays",
+    label: "Relay Controls",
+  },
+  {
+    key: "cameras",
+    label: "CCTV Cameras",
+  },
+  {
+    key: "watering",
+    label: "Panel Cleaning and Plant Watering",
+  },
+  {
+    key: "automations",
+    label: "Automations",
+  },
+];
+
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
+  const [activeTab, setActiveTab] = useState("relays");
 
   async function checkBackend() {
     setBackendStatus("checking");
@@ -94,14 +114,86 @@ export default function App() {
           </div>
         </header>
 
-        <WateringPanel />
-        <CameraPanel />
-        <AutomationsPanel />
-        <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {RELAYS.map((relay) => (
-            <RelayCard key={relay.key} relay={relay} />
-          ))}
-        </section>
+        <nav
+          className="mt-8 overflow-x-auto pb-1"
+          aria-label="Home automation sections"
+        >
+          <div
+            className="flex min-w-max gap-2 rounded-2xl bg-white p-2 shadow-sm ring-1 ring-slate-200"
+            role="tablist"
+          >
+            {TABS.map((tab) => {
+              const selected =
+                activeTab === tab.key;
+
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() =>
+                    setActiveTab(tab.key)
+                  }
+                  className={`shrink-0 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                    selected
+                      ? "bg-slate-950 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        <div
+          className={
+            activeTab === "relays"
+              ? "block"
+              : "hidden"
+          }
+        >
+          <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {RELAYS.map((relay) => (
+              <RelayCard
+                key={relay.key}
+                relay={relay}
+              />
+            ))}
+          </section>
+        </div>
+
+        <div
+          className={
+            activeTab === "cameras"
+              ? "block"
+              : "hidden"
+          }
+        >
+          <CameraPanel />
+        </div>
+
+        <div
+          className={
+            activeTab === "watering"
+              ? "block"
+              : "hidden"
+          }
+        >
+          <WateringPanel />
+        </div>
+
+        <div
+          className={
+            activeTab === "automations"
+              ? "block"
+              : "hidden"
+          }
+        >
+          <AutomationsPanel />
+        </div>
 
         <footer className="mt-8 text-center text-xs text-slate-500">
           Relay state is intentionally not persisted or inferred.

@@ -24,6 +24,8 @@ Independent camera-stream reconnect handling for unstable home networking.
 
 Configurable wall-clock CCTV segment duration.
 
+Automatic per-camera Day/Night preset control with configurable times and persistent applied-preset state.
+
 H.264/MPEG-TS recording to RAM-backed temporary storage.
 
 Backblaze B2 upload through the native b2sdk Python SDK.
@@ -36,7 +38,9 @@ systemd auto-start/restart for the FastAPI/Uvicorn process.
 
 Safe Raspberry Pi setup and update scripts.
 
-Known pending camera work is documented in Known pending work.
+Tabbed frontend navigation for Relay Controls, CCTV Cameras, Panel Cleaning and Plant Watering, and Automations.
+
+Any deliberately deferred items are documented in Known pending work.
 
 Design principles
 
@@ -78,6 +82,10 @@ FastAPI / Uvicorn on Raspberry Pi
   +-- Automation script service ----> standalone runtime Python scripts
   |
   +-- Camera subsystem
+         |
+         +-- CameraPresetService ----> ESP32 control API :8080/day or /night
+         |      +-- 30-minute check loop
+         |      +-- runtime/camera_preset_state.json
          |
          +-- ESP32-CAM MJPEG stream
          |      |
@@ -186,6 +194,8 @@ AutomationScriptService
 
 CameraSettingsService
 
+CameraPresetService
+
 BackblazeCredentialsService
 
 BackblazeB2StorageProvider
@@ -194,11 +204,13 @@ CameraUploadService
 
 CameraRecorderService
 
-The watering scheduler starts automatically. CCTV recording starts automatically only when persisted camera settings have recording_enabled=true.
+The watering scheduler and camera preset service start automatically. The camera preset service waits 30 seconds after backend startup before its first control request, then checks every 30 minutes. CCTV recording starts automatically only when persisted camera settings have recording_enabled=true.
 
 Shutdown order is deliberate:
 
 stop camera recorders;
+
+stop the camera preset service;
 
 wait for camera uploader workers;
 
@@ -216,6 +228,7 @@ runtime/
 ├── watering.json
 ├── watering_schedule_state.json
 ├── cameras.json
+├── camera_preset_state.json
 ├── backblaze_credentials.json
 └── automations/
     ├── restart_router.py
@@ -592,6 +605,44 @@ b2_upload_rate_kbps    = 300
 
 The segment duration remains configurable from the UI. 180 seconds matches the old CCTV implementation's three-minute segment length.
 
+Automatic Day / Night presets
+
+Each camera exposes a small control API on its configured control_port (currently port 8080):
+
+http://<camera-host>:8080/day
+http://<camera-host>:8080/night
+
+CameraPresetService applies these presets automatically. It does not query the camera for its current preset because the camera network is unreliable. Instead it stores the last preset that was successfully applied in:
+
+runtime/camera_preset_state.json
+
+The service behavior is deliberately simple:
+
+backend starts
+   -> wait 30 seconds so camera streams can settle
+   -> determine desired preset from Asia/Kolkata time
+   -> compare desired preset with local applied-preset state
+   -> if already matching: do nothing
+   -> if different/unknown: call /day or /night
+       -> success: update local state file
+       -> timeout/refused/network failure: leave state unchanged
+   -> wait 30 minutes and check again
+
+The default schedule is:
+
+day_mode_time   = 06:00
+night_mode_time = 18:00
+
+Both times are stored with the other camera settings in runtime/cameras.json and are configurable from the UI. The UI does not provide a manual Day/Night toggle. It only shows the last successfully applied preset for each camera and allows the Day/Night schedule times to be changed.
+
+A failed preset request is expected to be harmless. The service logs the failure and simply retries on the next 30-minute check. A camera control failure must not stop recording or trigger a shared camera-power restart.
+
+Preset status is exposed through:
+
+GET /api/cameras/preset/status
+
+The response includes the configured Day/Night times, timezone, check interval, desired preset, and the locally recorded applied preset for each camera.
+
 Why the camera architecture is split in two
 
 The original direct GStreamer pipeline connected the HTTP source directly to the encoder. When an ESP32 stream disconnected, souphttpsrc could attempt HTTP Range/resume behavior that the ESP32 streaming server did not support, causing the entire recorder pipeline to fail.
@@ -763,6 +814,7 @@ Camera API
 
 GET  /api/cameras/settings
 PUT  /api/cameras/settings
+GET  /api/cameras/preset/status
 GET  /api/cameras/recording/status
 POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
@@ -773,7 +825,19 @@ Changing camera settings is persistent, but recording-pipeline changes take effe
 
 Frontend
 
-The React UI currently provides:
+The React UI uses tabbed navigation so the major control areas are not rendered as one long vertical page. The tab order is intentionally:
+
+Relay Controls
+
+CCTV Cameras
+
+Panel Cleaning and Plant Watering
+
+Automations
+
+Tab labels use non-wrapping text. On a narrow screen the tab row scrolls horizontally rather than breaking long labels such as Panel Cleaning and Plant Watering. The underlying panels remain mounted while hidden so their existing state, polling, and unsaved UI state are not discarded when switching tabs.
+
+The React UI provides:
 
 backend health indication;
 
@@ -786,6 +850,8 @@ editable automation script panel;
 CCTV settings and recording status;
 
 per-camera configuration/status;
+
+automatic Day/Night schedule configuration and locally recorded applied-preset status;
 
 Backblaze settings and credential entry;
 
@@ -854,6 +920,7 @@ Cameras
 
 GET  /api/cameras/settings
 PUT  /api/cameras/settings
+GET  /api/cameras/preset/status
 GET  /api/cameras/recording/status
 POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
@@ -1000,20 +1067,7 @@ Both cameras share the camera power relay. The stream/recorder software is expec
 
 Known pending work
 
-The following items are not considered part of the completed core recording/upload path.
-
-Camera day/night mode
-
-Camera settings already contain:
-
-day_mode_time   = 06:00
-night_mode_time = 18:00
-
-The intended implementation is simple Python time-based control using the existing ESP32 camera control endpoints, plus a manual Day / Night control in the UI.
-
-No separate scheduling framework is needed.
-
-This is still pending and can be handled as a small follow-up iteration.
+The core Day/Night preset automation and UI schedule configuration are implemented. The remaining camera item below is intentionally not treated as an active feature.
 
 Legacy/planned camera health settings
 
@@ -1058,7 +1112,10 @@ Backblaze API details
 Persistent camera settings
     -> CameraSettingsService / runtime/cameras.json
 
-Frontend controls
+Camera Day/Night preset scheduling and state
+    -> CameraPresetService / runtime/camera_preset_state.json
+
+Frontend controls and tab navigation
     -> frontend/src
 
 When modifying CCTV code, preserve the separation between the unreliable HTTP stream and the long-lived recording pipeline. This separation is what allows the system to keep useful video despite intermittent camera/network failures.
@@ -1081,5 +1138,7 @@ RAM-backed recording
 Backblaze B2 upload
 provider abstraction
 single-attempt upload/delete policy
+automatic Day/Night camera presets
+tabbed frontend navigation
 
-The main explicitly deferred feature is automatic/manual camera Day/Night mode control.
+The current iteration has no deliberately deferred Day/Night UI/control work.
