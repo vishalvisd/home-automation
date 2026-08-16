@@ -35,6 +35,15 @@ export async function saveCameraSettings(settings) {
 }
 
 
+export async function getPresetStatus() {
+  const response = await fetch(
+    "/api/cameras/preset/status",
+  );
+
+  return handleResponse(response);
+}
+
+
 export async function getRecordingStatus() {
   const response = await fetch(
     "/api/cameras/recording/status",

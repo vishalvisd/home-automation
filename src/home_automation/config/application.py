@@ -25,6 +25,9 @@ AUTOMATION_RUNTIME_DIRECTORY = (
 )
 
 CAMERA_SETTINGS_FILE = RUNTIME_DIRECTORY / "cameras.json"
+CAMERA_PRESET_STATE_FILE = (
+    RUNTIME_DIRECTORY / "camera_preset_state.json"
+)
 BACKBLAZE_CREDENTIALS_FILE = (
     RUNTIME_DIRECTORY / "backblaze_credentials.json"
 )

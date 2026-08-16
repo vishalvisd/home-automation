@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from home_automation.api.dependencies import (
+    get_camera_preset_service,
     get_camera_recorder_service,
     get_camera_settings_service,
 )
@@ -11,6 +12,9 @@ from home_automation.config.camera_settings import (
 )
 from home_automation.services.camera_recorder_service import (
     CameraRecorderService,
+)
+from home_automation.services.camera_preset_service import (
+    CameraPresetService,
 )
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
@@ -44,6 +48,11 @@ CameraRecorderDependency = Annotated[
     Depends(get_camera_recorder_service),
 ]
 
+CameraPresetDependency = Annotated[
+    CameraPresetService,
+    Depends(get_camera_preset_service),
+]
+
 class BackblazeCredentialsRequest(BaseModel):
     key_id: str = Field(min_length=1)
     application_key: str = Field(min_length=1)
@@ -74,6 +83,13 @@ def save_settings(
     """
 
     return service.save(settings)
+
+
+@router.get("/preset/status")
+def preset_status(
+    service: CameraPresetDependency,
+) -> dict:
+    return service.status()
 
 
 @router.get("/recording/status")

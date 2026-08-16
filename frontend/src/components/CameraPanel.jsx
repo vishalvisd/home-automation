@@ -10,6 +10,7 @@ import {
 import {
   getBackblazeCredentialsStatus,
   getCameraSettings,
+  getPresetStatus,
   getRecordingStatus,
   saveBackblazeCredentials,
   saveCameraSettings,
@@ -21,6 +22,8 @@ import {
 export default function CameraPanel() {
   const [settings, setSettings] = useState(null);
   const [status, setStatus] = useState(null);
+  const [presetStatus, setPresetStatus] =
+    useState(null);
   const [pending, setPending] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -57,6 +60,16 @@ export default function CameraPanel() {
     }
   }
 
+  async function refreshPresetStatus() {
+    try {
+      setPresetStatus(
+        await getPresetStatus(),
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
   async function saveSettings() {
     setPending("save");
     setMessage(null);
@@ -68,11 +81,12 @@ export default function CameraPanel() {
       );
 
       setSettings(saved);
+      await refreshPresetStatus();
 
       setMessage(
         anyRecording
-          ? "Settings saved. Recording changes apply on the next recorder restart."
-          : "Camera settings saved.",
+          ? "Settings saved. Recording changes apply on the next recorder restart. Day/night times apply on the next preset check."
+          : "Camera settings saved. Day/night times apply on the next preset check.",
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -161,14 +175,27 @@ export default function CameraPanel() {
     loadSettings();
     loadCredentialsStatus();
     refreshStatus();
+    refreshPresetStatus();
 
-    const interval = window.setInterval(
-      refreshStatus,
-      3000,
-    );
+    const recordingInterval =
+      window.setInterval(
+        refreshStatus,
+        3000,
+      );
+
+    const presetInterval =
+      window.setInterval(
+        refreshPresetStatus,
+        30000,
+      );
 
     return () => {
-      window.clearInterval(interval);
+      window.clearInterval(
+        recordingInterval,
+      );
+      window.clearInterval(
+        presetInterval,
+      );
     };
   }, []);
 
@@ -341,6 +368,65 @@ export default function CameraPanel() {
           />
         </label>
       </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-950">
+              Day / Night Presets
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Cameras automatically switch presets
+              according to these times.
+            </p>
+          </div>
+
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            Checks every{" "}
+            {Math.round(
+              (presetStatus?.check_interval_seconds ??
+                1800) / 60,
+            )}{" "}
+            minutes
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <TimeSetting
+            label="Day preset time"
+            value={settings.day_mode_time}
+            onChange={(value) =>
+              updateSetting(
+                "day_mode_time",
+                value,
+              )
+            }
+          />
+
+          <TimeSetting
+            label="Night preset time"
+            value={settings.night_mode_time}
+            onChange={(value) =>
+              updateSetting(
+                "night_mode_time",
+                value,
+              )
+            }
+          />
+        </div>
+
+        <p className="mt-4 text-xs text-slate-500">
+          Timezone:{" "}
+          <span className="font-medium">
+            {presetStatus?.timezone ??
+              "Asia/Kolkata"}
+          </span>
+          . Failed camera requests are ignored and
+          retried at the next scheduled check.
+        </p>
+      </div>
+
       <div className="mt-6 rounded-2xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -524,6 +610,12 @@ export default function CameraPanel() {
                   item.key === camera.key,
               );
 
+            const cameraPreset =
+              presetStatus?.cameras?.find(
+                (item) =>
+                  item.key === camera.key,
+              );
+
             return (
               <div
                 key={camera.key}
@@ -555,6 +647,39 @@ export default function CameraPanel() {
                         ? "Idle"
                         : "Disabled"}
                   </span>
+                </div>
+
+                <div className="mt-4 rounded-xl bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-slate-600">
+                      Current applied preset
+                    </span>
+
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        cameraPreset?.preset === "day"
+                          ? "bg-amber-100 text-amber-700"
+                          : cameraPreset?.preset === "night"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {cameraPreset?.preset === "day"
+                        ? "Day"
+                        : cameraPreset?.preset === "night"
+                          ? "Night"
+                          : "Unknown"}
+                    </span>
+                  </div>
+
+                  {cameraPreset?.applied_at && (
+                    <div className="mt-2 text-xs text-slate-500">
+                      Last successfully applied:{" "}
+                      {new Date(
+                        cameraPreset.applied_at,
+                      ).toLocaleString()}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-5 space-y-4">
@@ -761,6 +886,30 @@ function NumberSetting({
           {suffix}
         </span>
       </div>
+    </label>
+  );
+}
+
+
+function TimeSetting({
+  label,
+  value,
+  onChange,
+}) {
+  return (
+    <label className="rounded-2xl bg-slate-50 p-4">
+      <span className="text-sm font-medium text-slate-700">
+        {label}
+      </span>
+
+      <input
+        type="time"
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+      />
     </label>
   );
 }

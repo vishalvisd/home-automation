@@ -18,6 +18,9 @@ from home_automation.services.camera_recorder_service import (
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
+from home_automation.services.camera_preset_service import (
+    CameraPresetService,
+)
 from home_automation.services.backblaze_credentials_service import (
     BackblazeCredentialsService,
 )
@@ -59,6 +62,11 @@ def get_camera_recorder_service(
     request: Request,
 ) -> CameraRecorderService:
     return request.app.state.camera_recorder_service
+
+def get_camera_preset_service(
+    request: Request,
+) -> CameraPresetService:
+    return request.app.state.camera_preset_service
 
 def get_backblaze_credentials_service(
     request: Request,

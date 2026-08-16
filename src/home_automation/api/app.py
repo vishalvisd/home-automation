@@ -14,6 +14,7 @@ from home_automation.api.routes import (
 from home_automation.config.application import (
     AUTOMATION_RUNTIME_DIRECTORY,
     AUTOMATION_TEMPLATE_DIRECTORY,
+    CAMERA_PRESET_STATE_FILE,
     CAMERA_SETTINGS_FILE,
     FRONTEND_DIST_DIRECTORY,
     WATERING_SCHEDULE_STATE_FILE,
@@ -26,6 +27,9 @@ from home_automation.services.automation_script_service import (
 )
 from home_automation.services.camera_recorder_service import (
     CameraRecorderService,
+)
+from home_automation.services.camera_preset_service import (
+    CameraPresetService,
 )
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
@@ -105,6 +109,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         camera_upload_service,
     )
 
+    camera_preset_service = CameraPresetService(
+        camera_settings_service,
+        CAMERA_PRESET_STATE_FILE,
+    )
+
     app.state.relay_manager = relay_manager
     app.state.watering_settings_service = watering_settings_service
     app.state.watering_service = watering_service
@@ -112,9 +121,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.automation_script_service = automation_script_service
     app.state.camera_settings_service = camera_settings_service
     app.state.camera_recorder_service = camera_recorder_service
+    app.state.camera_preset_service = camera_preset_service
     app.state.backblaze_credentials_service = backblaze_credentials_service
 
     watering_scheduler_service.start()
+    camera_preset_service.start()
     camera_recorder_service.start_if_enabled()
 
     try:
@@ -122,6 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     finally:
         camera_recorder_service.shutdown()
+        camera_preset_service.stop()
         camera_upload_service.shutdown()
         watering_scheduler_service.stop()
         watering_service.shutdown()
