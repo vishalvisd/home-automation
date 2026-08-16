@@ -37,7 +37,14 @@ sudo systemctl status home-automation
 sudo journalctl -u home-automation -n 100 --no-pager
 ```
 
-### For normal development after git pull
+### For normal updates
+
+After pushing changes from the Mac:
+
+```bash
+cd ~/workspace/home-automation
+bash scripts/update_pi.sh
 ```
-sudo systemctl restart home-automation
-```
+
+The update script pulls the latest code, synchronizes Python dependencies,
+restarts Home Automation, and verifies that it started successfully.
