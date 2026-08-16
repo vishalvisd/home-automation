@@ -41,11 +41,10 @@ from home_automation.services.watering_settings_service import (
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
-    Create one relay manager for the complete backend lifetime.
-
-    This ensures that only one process owns and controls the General-Purpose
-    Input/Output pins.
+    Create application services for the complete backend lifetime.
     """
+
+    configure_logging()
 
     relay_manager = RelayManager()
 
@@ -100,7 +99,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    configure_logging()
 
     application = FastAPI(
         title="Home Automation",
