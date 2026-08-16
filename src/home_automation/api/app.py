@@ -46,6 +46,10 @@ from home_automation.services.backblaze_credentials_service import (
     BackblazeCredentialsService,
 )
 
+from home_automation.services.backblaze_b2_storage_provider import (
+    BackblazeB2StorageProvider,
+)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
@@ -86,9 +90,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
 
-    camera_upload_service = CameraUploadService(
+    backblaze_b2_storage_provider = BackblazeB2StorageProvider(
         camera_settings_service,
         backblaze_credentials_service,
+    )
+
+    camera_upload_service = CameraUploadService(
+        camera_settings_service,
+        backblaze_b2_storage_provider,
     )
 
     camera_recorder_service = CameraRecorderService(
