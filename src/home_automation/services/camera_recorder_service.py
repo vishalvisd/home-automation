@@ -13,7 +13,10 @@ from home_automation.config.camera_settings import (
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
-
+from collections.abc import Callable
+from home_automation.services.camera_upload_service import (
+    CameraUploadService,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +49,11 @@ class CameraRecorder:
         self,
         camera: CameraConfig,
         settings: CameraSettings,
+        on_fragment_closed: Callable[
+            [CameraConfig, Path],
+            None,
+        ]
+        | None = None,
     ) -> None:
         self._camera = camera
         self._settings = settings
@@ -60,6 +68,9 @@ class CameraRecorder:
         self._last_error: str | None = None
         self._current_fragment: str | None = None
         self._last_completed_fragment: str | None = None
+        self._on_fragment_closed = (
+            on_fragment_closed
+        )
 
     def start(self) -> None:
         if Gst is None:
@@ -370,6 +381,25 @@ class CameraRecorder:
             if self._current_fragment == location:
                 self._current_fragment = None
 
+        LOGGER.info(
+                "Camera segment created [%s]: %s",
+                self._camera.name,
+                location,
+            )
+
+        if self._on_fragment_closed is not None:
+            try:
+                self._on_fragment_closed(
+                    self._camera,
+                    Path(location),
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Camera segment callback failed [%s]: %s",
+                    self._camera.name,
+                    location,
+                )
+
 
 class CameraRecorderService:
     """Manage and automatically recover CCTV recording pipelines."""
@@ -380,7 +410,9 @@ class CameraRecorderService:
     def __init__(
         self,
         settings_service: CameraSettingsService,
+        upload_service: CameraUploadService,
     ) -> None:
+        self._upload_service = upload_service
         self._settings_service = settings_service
         self._lock = RLock()
 
@@ -715,6 +747,9 @@ class CameraRecorderService:
             recorder = CameraRecorder(
                 camera,
                 settings,
+                on_fragment_closed=(
+                    self._upload_service.submit
+                ),
             )
 
             self._recorders[camera.key] = (

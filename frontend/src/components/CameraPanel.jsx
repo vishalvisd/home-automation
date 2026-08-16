@@ -8,8 +8,10 @@ import {
 } from "lucide-react";
 
 import {
+  getBackblazeCredentialsStatus,
   getCameraSettings,
   getRecordingStatus,
+  saveBackblazeCredentials,
   saveCameraSettings,
   startRecording,
   stopRecording,
@@ -22,10 +24,26 @@ export default function CameraPanel() {
   const [pending, setPending] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [credentialsStatus, setCredentialsStatus] = useState(null);
+  const [backblazeKeyId, setBackblazeKeyId] = useState("");
+  const [
+    backblazeApplicationKey,
+    setBackblazeApplicationKey,
+  ] = useState("");
 
   async function loadSettings() {
     try {
       setSettings(await getCameraSettings());
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function loadCredentialsStatus() {
+    try {
+      setCredentialsStatus(
+        await getBackblazeCredentialsStatus(),
+      );
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -55,6 +73,35 @@ export default function CameraPanel() {
         anyRecording
           ? "Settings saved. Recording changes apply on the next recorder restart."
           : "Camera settings saved.",
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function saveCredentials() {
+    setPending("credentials");
+    setMessage(null);
+    setError(null);
+
+    try {
+      const result =
+        await saveBackblazeCredentials(
+          backblazeKeyId,
+          backblazeApplicationKey,
+        );
+
+      setCredentialsStatus(result);
+
+      // Never retain credentials in browser state
+      // after they have been saved.
+      setBackblazeKeyId("");
+      setBackblazeApplicationKey("");
+
+      setMessage(
+        "Backblaze credentials saved.",
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -112,6 +159,7 @@ export default function CameraPanel() {
 
   useEffect(() => {
     loadSettings();
+    loadCredentialsStatus();
     refreshStatus();
 
     const interval = window.setInterval(
@@ -292,6 +340,179 @@ export default function CameraPanel() {
             className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm"
           />
         </label>
+      </div>
+      <div className="mt-6 rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-950">
+              Backblaze B2
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Upload completed CCTV segments to
+              Backblaze B2.
+            </p>
+          </div>
+
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              credentialsStatus?.configured
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {credentialsStatus?.configured
+              ? "Credentials configured"
+              : "Credentials not configured"}
+          </span>
+        </div>
+
+        {credentialsStatus?.configured && (
+          <p className="mt-3 text-xs text-slate-500">
+            Key ID ending in{" "}
+            <span className="font-mono font-semibold">
+              {credentialsStatus.key_id_suffix}
+            </span>
+          </p>
+        )}
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <label className="rounded-2xl bg-slate-50 p-4">
+            <span className="text-sm font-medium text-slate-700">
+              Upload enabled
+            </span>
+
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={settings.b2_upload_enabled}
+                onChange={(event) =>
+                  updateSetting(
+                    "b2_upload_enabled",
+                    event.target.checked,
+                  )
+                }
+                className="h-5 w-5"
+              />
+
+              <span className="text-sm">
+                {settings.b2_upload_enabled
+                  ? "Enabled"
+                  : "Disabled"}
+              </span>
+            </div>
+          </label>
+
+          <TextField
+            label="Region"
+            value={settings.b2_region}
+            mono
+            onChange={(value) =>
+              updateSetting(
+                "b2_region",
+                value,
+              )
+            }
+          />
+
+          <TextField
+            label="Bucket"
+            value={settings.b2_bucket}
+            mono
+            onChange={(value) =>
+              updateSetting(
+                "b2_bucket",
+                value,
+              )
+            }
+          />
+
+          <NumberSetting
+            label="Upload rate"
+            value={settings.b2_upload_rate_kbps}
+            suffix="KiB/s"
+            min={1}
+            onChange={(value) =>
+              updateSetting(
+                "b2_upload_rate_kbps",
+                value,
+              )
+            }
+          />
+        </div>
+
+        <div className="mt-5 border-t border-slate-200 pt-5">
+          <div className="text-sm font-semibold text-slate-900">
+            Credentials
+          </div>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Credentials are stored only on this
+            Raspberry Pi and are not committed to Git.
+          </p>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">
+                Application Key ID
+              </span>
+
+              <input
+                type="password"
+                value={backblazeKeyId}
+                autoComplete="off"
+                onChange={(event) =>
+                  setBackblazeKeyId(
+                    event.target.value,
+                  )
+                }
+                placeholder={
+                  credentialsStatus?.configured
+                    ? "Enter only to replace"
+                    : "Enter Key ID"
+                }
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">
+                Application Key
+              </span>
+
+              <input
+                type="password"
+                value={backblazeApplicationKey}
+                autoComplete="new-password"
+                onChange={(event) =>
+                  setBackblazeApplicationKey(
+                    event.target.value,
+                  )
+                }
+                placeholder={
+                  credentialsStatus?.configured
+                    ? "Enter only to replace"
+                    : "Enter Application Key"
+                }
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={saveCredentials}
+            disabled={
+              pending !== null ||
+              !backblazeKeyId.trim() ||
+              !backblazeApplicationKey.trim()
+            }
+            className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            <Save size={17} />
+            Save Credentials
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">

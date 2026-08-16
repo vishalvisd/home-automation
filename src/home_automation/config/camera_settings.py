@@ -41,6 +41,15 @@ class CameraSettings(BaseModel):
         ge=1,
     )
 
+    # Backblaze B2 upload
+    b2_upload_enabled: bool = False
+    b2_region: str = "ca-east-006"
+    b2_bucket: str = "visd-cctv"
+    b2_upload_rate_kbps: int = Field(
+        default=300,
+        ge=1,
+    )
+
     cameras: list[CameraConfig] = [
         CameraConfig(
             key="cam1",

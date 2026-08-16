@@ -18,6 +18,7 @@ from home_automation.config.application import (
     FRONTEND_DIST_DIRECTORY,
     WATERING_SCHEDULE_STATE_FILE,
     WATERING_SETTINGS_FILE,
+    BACKBLAZE_CREDENTIALS_FILE,
 )
 from home_automation.config.logging import configure_logging
 from home_automation.services.automation_script_service import (
@@ -36,6 +37,13 @@ from home_automation.services.watering_scheduler_service import (
 from home_automation.services.watering_service import WateringService
 from home_automation.services.watering_settings_service import (
     WateringSettingsService,
+)
+from home_automation.services.camera_upload_service import (
+    CameraUploadService,
+)
+
+from home_automation.services.backblaze_credentials_service import (
+    BackblazeCredentialsService,
 )
 
 @asynccontextmanager
@@ -72,8 +80,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         CAMERA_SETTINGS_FILE
     )
 
+    backblaze_credentials_service = (
+        BackblazeCredentialsService(
+            BACKBLAZE_CREDENTIALS_FILE
+        )
+    )
+
+    camera_upload_service = CameraUploadService(
+        camera_settings_service,
+        backblaze_credentials_service,
+    )
+
     camera_recorder_service = CameraRecorderService(
-        camera_settings_service
+        camera_settings_service,
+        camera_upload_service,
     )
 
     app.state.relay_manager = relay_manager
@@ -83,6 +103,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.automation_script_service = automation_script_service
     app.state.camera_settings_service = camera_settings_service
     app.state.camera_recorder_service = camera_recorder_service
+    app.state.backblaze_credentials_service = backblaze_credentials_service
 
     watering_scheduler_service.start()
     camera_recorder_service.start_if_enabled()
@@ -92,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     finally:
         camera_recorder_service.shutdown()
+        camera_upload_service.shutdown()
         watering_scheduler_service.stop()
         watering_service.shutdown()
         relay_manager.close()

@@ -16,6 +16,17 @@ from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
 
+from pydantic import BaseModel, Field
+
+from home_automation.api.dependencies import (
+    get_backblaze_credentials_service,
+)
+from home_automation.config.backblaze_credentials import (
+    BackblazeCredentials,
+)
+from home_automation.services.backblaze_credentials_service import (
+    BackblazeCredentialsService,
+)
 
 router = APIRouter(
     prefix="/api/cameras",
@@ -33,6 +44,15 @@ CameraRecorderDependency = Annotated[
     Depends(get_camera_recorder_service),
 ]
 
+class BackblazeCredentialsRequest(BaseModel):
+    key_id: str = Field(min_length=1)
+    application_key: str = Field(min_length=1)
+
+
+BackblazeCredentialsDependency = Annotated[
+    BackblazeCredentialsService,
+    Depends(get_backblaze_credentials_service),
+]
 
 @router.get("/settings")
 def get_settings(
@@ -75,3 +95,30 @@ def stop_recording(
     recorder: CameraRecorderDependency,
 ) -> dict:
     return recorder.stop()
+
+@router.get(
+    "/backblaze/credentials"
+)
+def get_backblaze_credentials(
+    service: BackblazeCredentialsDependency,
+) -> dict:
+    return service.status()
+
+
+@router.put(
+    "/backblaze/credentials"
+)
+def save_backblaze_credentials(
+    request: BackblazeCredentialsRequest,
+    service: BackblazeCredentialsDependency,
+) -> dict:
+    service.save(
+        BackblazeCredentials(
+            key_id=request.key_id.strip(),
+            application_key=(
+                request.application_key.strip()
+            ),
+        )
+    )
+
+    return service.status()

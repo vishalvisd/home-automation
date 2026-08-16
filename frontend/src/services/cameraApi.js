@@ -66,3 +66,33 @@ export async function stopRecording() {
 
   return handleResponse(response);
 }
+
+export async function getBackblazeCredentialsStatus() {
+  const response = await fetch(
+    "/api/cameras/backblaze/credentials",
+  );
+
+  return handleResponse(response);
+}
+
+
+export async function saveBackblazeCredentials(
+  keyId,
+  applicationKey,
+) {
+  const response = await fetch(
+    "/api/cameras/backblaze/credentials",
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        key_id: keyId,
+        application_key: applicationKey,
+      }),
+    },
+  );
+
+  return handleResponse(response);
+}

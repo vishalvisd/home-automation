@@ -18,6 +18,9 @@ from home_automation.services.camera_recorder_service import (
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
+from home_automation.services.backblaze_credentials_service import (
+    BackblazeCredentialsService,
+)
 
 
 def get_relay_manager(request: Request) -> RelayManager:
@@ -56,3 +59,8 @@ def get_camera_recorder_service(
     request: Request,
 ) -> CameraRecorderService:
     return request.app.state.camera_recorder_service
+
+def get_backblaze_credentials_service(
+    request: Request,
+) -> BackblazeCredentialsService:
+    return request.app.state.backblaze_credentials_service
