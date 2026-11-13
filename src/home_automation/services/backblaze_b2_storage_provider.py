@@ -79,6 +79,11 @@ class BackblazeB2StorageProvider:
                 "Backblaze credentials are not configured"
             )
 
+        if not settings.b2_bucket.strip():
+            raise RuntimeError(
+                "Backblaze bucket name is not configured"
+            )
+
         account_info = InMemoryAccountInfo()
 
         b2_api = B2Api(
@@ -93,7 +98,7 @@ class BackblazeB2StorageProvider:
         )
 
         bucket = b2_api.get_bucket_by_name(
-            settings.b2_bucket
+            settings.b2_bucket.strip()
         )
 
         progress_listener = RateLimitedProgressListener(

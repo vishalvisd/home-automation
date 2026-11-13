@@ -20,6 +20,10 @@ from home_automation.services.camera_upload_service import (
 from home_automation.services.camera_stream_source import (
     CameraStreamSource,
 )
+from home_automation.services.rtsp_ffmpeg_recorder import (
+    FFMPEG_BINARY,
+    RtspFfmpegRecorder,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -568,7 +572,7 @@ class CameraRecorderService:
 
         self._recorders: dict[
             str,
-            CameraRecorder,
+            CameraRecorder | RtspFfmpegRecorder,
         ] = {}
 
         self._next_retry_at: dict[
@@ -681,6 +685,7 @@ class CameraRecorderService:
                             "key": camera.key,
                             "name": camera.name,
                             "host": camera.host,
+                            "source_type": camera.source_type,
                             "enabled": camera.enabled,
                             "running": False,
                             "last_error": None,
@@ -719,6 +724,7 @@ class CameraRecorderService:
                 if GST_IMPORT_ERROR is None
                 else str(GST_IMPORT_ERROR)
             ),
+            "ffmpeg_available": FFMPEG_BINARY is not None,
             "recording_enabled": (
                 settings.recording_enabled
             ),
@@ -897,7 +903,13 @@ class CameraRecorderService:
             ):
                 return
 
-            recorder = CameraRecorder(
+            recorder_class = (
+                RtspFfmpegRecorder
+                if camera.source_type == "rtsp"
+                else CameraRecorder
+            )
+
+            recorder = recorder_class(
                 camera,
                 settings,
                 on_fragment_closed=(

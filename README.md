@@ -6,7 +6,7 @@ This README is intentionally detailed. It is the main architecture/reference doc
 
 Current status
 
-As of 2026-08-16, the following are implemented and working:
+As of 2026-11-13, the following are implemented and working:
 
 FastAPI backend on Raspberry Pi.
 
@@ -18,7 +18,7 @@ Scheduled and manual solar-panel cleaning / plant watering.
 
 Editable standalone Python automation scripts.
 
-CCTV recording from two ESP32-CAM MJPEG streams.
+CCTV recording from ESP32-CAM MJPEG streams (GStreamer) and from commercial RTSP cameras (ffmpeg, stream copy), side by side.
 
 Independent camera-stream reconnect handling for unstable home networking.
 
@@ -32,7 +32,7 @@ Backblaze B2 upload through the native b2sdk Python SDK.
 
 Rate-limited uploads.
 
-One-shot upload semantics: upload once, then delete the local segment whether upload succeeds or fails.
+One-shot upload semantics: upload once, then delete the local segment whether upload succeeds or fails. A per-camera cap on waiting segments stops RAM filling up when uploads fall behind.
 
 systemd auto-start/restart for the FastAPI/Uvicorn process.
 
@@ -60,7 +60,9 @@ CCTV must tolerate an unreliable home network. A temporary camera-stream failure
 
 Missing camera frames are skipped, not fabricated. Do not duplicate/freeze frames to hide outages.
 
-Failed CCTV uploads are not retried. Each completed segment is attempted once and then deleted from RAM.
+Failed CCTV uploads are not retried. Each completed segment is attempted once and then deleted from RAM. Nothing is ever kept locally.
+
+Video from commercial RTSP cameras is never re-encoded on the Pi. ffmpeg copies the camera's own H.264/H.265 stream; only the audio is converted to AAC.
 
 Do not power-cycle the shared camera power line automatically because one camera fails. A shared restart would interrupt a healthy camera.
 
@@ -87,16 +89,19 @@ FastAPI / Uvicorn on Raspberry Pi
          |      +-- 30-minute check loop
          |      +-- runtime/camera_preset_state.json
          |
-         +-- ESP32-CAM MJPEG stream
+         +-- CameraRecorderService (supervisor, picks a recorder per camera)
          |      |
-         |      +-- reconnectable CameraStreamSource
-         |             |
-         |             +-- JPEG frames
-         |                    |
-         |                    v
-         |               CameraRecorder
-         |                    |
-         |                    +-- H.264 / MPEG-TS segments
+         |      +-- source_type = esp32_mjpeg
+         |      |      ESP32-CAM MJPEG stream
+         |      |        -> reconnectable CameraStreamSource (JPEG frames)
+         |      |        -> CameraRecorder (x264 encode)
+         |      |        -> H.264 / MPEG-TS .ts segments
+         |      |
+         |      +-- source_type = rtsp
+         |             commercial IP camera RTSP stream
+         |               -> RtspFfmpegRecorder (ffmpeg child process)
+         |               -> video copied as-is, audio to AAC
+         |               -> MP4 segments
          |                           |
          |                           v
          |                    /dev/shm/... (RAM)
@@ -130,7 +135,9 @@ Uvicorn.
 
 gpiozero for General-Purpose Input/Output (GPIO).
 
-GStreamer 1.x for CCTV capture/encoding/segmenting.
+GStreamer 1.x for ESP32-CAM capture/encoding/segmenting.
+
+ffmpeg for RTSP camera recording (stream copy, no re-encoding).
 
 PyGObject (gi) for Python GStreamer bindings.
 
@@ -534,9 +541,27 @@ POST /api/automations/{key}/run
 
 CCTV subsystem
 
+Camera types
+
+Every camera in runtime/cameras.json has a source_type:
+
+esp32_mjpeg   ESP32-CAM serving MJPEG over HTTP. Uses host, stream_path and
+              control_port. Frames are pulled by GStreamer and software-encoded
+              to H.264 on the Pi. Output is MPEG-TS (.ts). Day/night presets apply.
+
+rtsp          Commercial IP camera serving H.264/H.265 over RTSP. Uses stream_url,
+              the full RTSP URL including the camera login if it needs one.
+              ffmpeg copies the video untouched and converts audio to AAC.
+              Output is MP4 (.mp4) that plays on Mac and phone.
+
+Both types run side by side. Cameras can be added and removed from the UI.
+The first commercial camera is a Trueview T18296S (H.265 2304x1296 @ 15 fps,
+G.711 audio). Its main stream records at roughly 20 MB per 3 minutes; its sub
+stream (800x448) at roughly 5 MB. Which one is used is simply the URL in config.
+
 Cameras
 
-The current installation has two ESP32-CAM cameras:
+The installation started with two ESP32-CAM cameras:
 
 Key
 
@@ -576,6 +601,10 @@ Important settings include:
 
 recording enabled;
 
+per-camera source type (esp32_mjpeg or rtsp) and its fields;
+
+waiting-segment cap per camera (pending_upload_limit);
+
 configurable segment duration (segment_seconds);
 
 target frame rate;
@@ -597,10 +626,11 @@ Backblaze upload rate limit.
 Current defaults include:
 
 segment_seconds        = 180
-frame_rate             = 15
-video_bitrate_kbps     = 1000
+frame_rate             = 15      (ESP32-CAM only)
+video_bitrate_kbps     = 1000    (ESP32-CAM only)
 recording_directory    = /dev/shm/home-automation/cameras
-b2_bucket              = visd-cctv
+pending_upload_limit   = 3
+b2_bucket              = (empty; set from the UI)
 b2_upload_rate_kbps    = 300
 
 The segment duration remains configurable from the UI. 180 seconds matches the old CCTV implementation's three-minute segment length.
@@ -643,7 +673,26 @@ GET /api/cameras/preset/status
 
 The response includes the configured Day/Night times, timezone, check interval, desired preset, and the locally recorded applied preset for each camera.
 
-Why the camera architecture is split in two
+RTSP cameras: RtspFfmpegRecorder
+
+For an rtsp camera the supervisor starts RtspFfmpegRecorder instead of the
+GStreamer recorder. It:
+
+1. runs ffprobe once to learn the video and audio codec;
+2. starts ffmpeg as a child process with -c:v copy (plus -tag:v hvc1 for
+   H.265 so Apple players accept it), audio to AAC 32 kbps unless it is
+   already AAC, and the segment muxer cutting MP4 files every segment_seconds;
+3. reads ffmpeg's log to learn when each file is finished and hands it to
+   CameraUploadService, the same as the ESP32 path;
+4. exits if the camera stops sending for 15 seconds (socket timeout), and a
+   watchdog kills ffmpeg if no new segment starts for far too long. The
+   supervisor then restarts it after recorder_restart_delay_seconds.
+
+Leftover files from a crashed ffmpeg are deleted at the next start because an
+unfinished MP4 does not play. Camera passwords in the RTSP URL are masked in
+logs and in the status API.
+
+Why the ESP32 camera architecture is split in two
 
 The original direct GStreamer pipeline connected the HTTP source directly to the encoder. When an ESP32 stream disconnected, souphttpsrc could attempt HTTP Range/resume behavior that the ESP32 streaming server did not support, causing the entire recorder pipeline to fail.
 
@@ -770,6 +819,9 @@ Upload behavior
 For every completed non-empty segment:
 
 segment closes
+   -> if upload is disabled: delete the segment immediately
+   -> if pending_upload_limit segments are already waiting:
+        delete the oldest waiting one without uploading
    -> submit upload
    -> attempt upload exactly once
    -> success: log success
@@ -777,7 +829,8 @@ segment closes
    -> always delete local segment
    -> move on
 
-There is intentionally no retry queue.
+There is intentionally no retry queue and no local backup. Segments live in
+RAM, so nothing may accumulate.
 
 Upload rate limit
 
@@ -799,10 +852,10 @@ B2 object naming
 
 The downstream system depends on the existing object layout, so preserve it:
 
-cam1/YYYY/MM/DD/HH/cam_1_YYYY_MM_DD_HH_MM_SS.ts
-cam2/YYYY/MM/DD/HH/cam_2_YYYY_MM_DD_HH_MM_SS.ts
+cam1/YYYY/MM/DD/HH/cam_1_YYYY_MM_DD_HH_MM_SS.ts     (ESP32-CAM)
+cam3/YYYY/MM/DD/HH/cam_3_YYYY_MM_DD_HH_MM_SS.mp4    (RTSP camera)
 
-The object timestamp uses Asia/Kolkata.
+The extension follows the camera type. The object timestamp uses Asia/Kolkata.
 
 Example:
 
@@ -970,7 +1023,7 @@ bash scripts/setup_pi.sh
 
 Do not run the script itself with sudo; it invokes sudo only for the operations that require it.
 
-The setup script installs the required operating-system/GStreamer packages, installs uv if missing, creates/synchronizes the Python environment, verifies required GStreamer elements, installs the systemd unit, enables it at boot, and starts the service.
+The setup script installs the required operating-system packages (GStreamer and ffmpeg), installs uv if missing, creates/synchronizes the Python environment, verifies required GStreamer elements, installs the systemd unit, enables it at boot, and starts the service.
 
 SETUP_PI.md is intentionally kept short; this README is the detailed architecture reference.
 
@@ -1063,7 +1116,7 @@ attempt once -> log -> delete -> continue
 
 Do not auto-restart shared camera power for one failed camera
 
-Both cameras share the camera power relay. The stream/recorder software is expected to reconnect independently. Automatically cycling the shared line because Camera 2 is unhealthy would unnecessarily interrupt Camera 1.
+The ESP32 cameras share the camera power relay. The stream/recorder software is expected to reconnect independently. Automatically cycling the shared line because Camera 2 is unhealthy would unnecessarily interrupt Camera 1.
 
 Known pending work
 
@@ -1094,11 +1147,14 @@ Watering schedule
 Editable scripts
     -> AutomationScriptService + automation_templates/
 
-Camera HTTP reliability
+ESP32-CAM HTTP reliability
     -> CameraStreamSource
 
-Camera encoding / segment creation
+ESP32-CAM encoding / segment creation
     -> CameraRecorder
+
+RTSP camera recording (ffmpeg)
+    -> RtspFfmpegRecorder
 
 Recorder process recovery
     -> CameraRecorderService

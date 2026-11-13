@@ -53,7 +53,8 @@ sudo apt-get install -y \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
-    gstreamer1.0-plugins-ugly
+    gstreamer1.0-plugins-ugly \
+    ffmpeg
 
 
 echo
@@ -78,7 +79,7 @@ cd "${PROJECT_DIR}"
 
 
 echo
-echo "[4/5] Checking CCTV GStreamer components..."
+echo "[4/5] Checking CCTV recording tools..."
 
 GSTREAMER_ELEMENTS=(
     souphttpsrc
@@ -100,6 +101,16 @@ for element in "${GSTREAMER_ELEMENTS[@]}"; do
 done
 
 echo "GStreamer components OK."
+
+# RTSP cameras are recorded with ffmpeg.
+for tool in ffmpeg ffprobe; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+        echo "ERROR: Missing ${tool}"
+        exit 1
+    fi
+done
+
+echo "ffmpeg OK."
 
 
 echo

@@ -4,7 +4,9 @@ import {
   CircleStop,
   LoaderCircle,
   Play,
+  Plus,
   Save,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -17,6 +19,29 @@ import {
   startRecording,
   stopRecording,
 } from "../services/cameraApi";
+
+
+const SOURCE_TYPES = [
+  {
+    value: "esp32_mjpeg",
+    label: "ESP32-CAM (MJPEG over HTTP)",
+  },
+  {
+    value: "rtsp",
+    label: "RTSP camera (commercial IP camera)",
+  },
+];
+
+
+function nextCameraKey(cameras) {
+  let number = 1;
+
+  while (cameras.some((camera) => camera.key === `cam${number}`)) {
+    number += 1;
+  }
+
+  return `cam${number}`;
+}
 
 
 export default function CameraPanel() {
@@ -171,6 +196,39 @@ export default function CameraPanel() {
     }));
   }
 
+  function addCamera() {
+    setSettings((current) => {
+      const key = nextCameraKey(current.cameras);
+      const number = key.replace("cam", "");
+
+      return {
+        ...current,
+        cameras: [
+          ...current.cameras,
+          {
+            key,
+            name: `Camera ${number}`,
+            enabled: true,
+            source_type: "rtsp",
+            host: "",
+            stream_path: "/stream",
+            control_port: 8080,
+            stream_url: "",
+          },
+        ],
+      };
+    });
+  }
+
+  function removeCamera(index) {
+    setSettings((current) => ({
+      ...current,
+      cameras: current.cameras.filter(
+        (_camera, cameraIndex) => cameraIndex !== index,
+      ),
+    }));
+  }
+
   useEffect(() => {
     loadSettings();
     loadCredentialsStatus();
@@ -221,7 +279,7 @@ export default function CameraPanel() {
           </h2>
 
           <p className="mt-1 text-sm text-slate-600">
-            ESP32-CAM recording and configuration.
+            Camera recording and configuration.
           </p>
         </div>
 
@@ -236,38 +294,24 @@ export default function CameraPanel() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">
-              GStreamer
-            </div>
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <CapabilityCard
+          label="GStreamer"
+          description="Needed for ESP32-CAM cameras"
+          available={status?.gstreamer_available}
+          detail={status?.gstreamer_error}
+        />
 
-            <div className="mt-1 text-sm text-slate-500">
-              {status?.gstreamer_available
-                ? "Available"
-                : "Unavailable"}
-            </div>
-          </div>
-
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              status?.gstreamer_available
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {status?.gstreamer_available
-              ? "Ready"
-              : "Not Ready"}
-          </span>
-        </div>
-
-        {status?.gstreamer_error && (
-          <p className="mt-3 text-xs text-red-700">
-            {status.gstreamer_error}
-          </p>
-        )}
+        <CapabilityCard
+          label="ffmpeg"
+          description="Needed for RTSP cameras"
+          available={status?.ffmpeg_available}
+          detail={
+            status && !status.ffmpeg_available
+              ? "Install on the Pi with: sudo apt-get install ffmpeg"
+              : null
+          }
+        />
       </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -311,31 +355,6 @@ export default function CameraPanel() {
         />
 
         <NumberSetting
-          label="Frame rate"
-          value={settings.frame_rate}
-          suffix="fps"
-          min={1}
-          onChange={(value) =>
-            updateSetting(
-              "frame_rate",
-              value,
-            )
-          }
-        />
-
-        <NumberSetting
-          label="Video bitrate"
-          value={settings.video_bitrate_kbps}
-          suffix="kbps"
-          min={100}
-          onChange={(value) =>
-            updateSetting(
-              "video_bitrate_kbps",
-              value,
-            )
-          }
-        />
-        <NumberSetting
           label="Recorder restart delay"
           value={
             settings.recorder_restart_delay_seconds
@@ -350,9 +369,48 @@ export default function CameraPanel() {
           }
         />
 
-        <label className="rounded-2xl bg-slate-50 p-4 md:col-span-2">
+        <NumberSetting
+          label="Frame rate (ESP32-CAM only)"
+          value={settings.frame_rate}
+          suffix="fps"
+          min={1}
+          onChange={(value) =>
+            updateSetting(
+              "frame_rate",
+              value,
+            )
+          }
+        />
+
+        <NumberSetting
+          label="Video bitrate (ESP32-CAM only)"
+          value={settings.video_bitrate_kbps}
+          suffix="kbps"
+          min={100}
+          onChange={(value) =>
+            updateSetting(
+              "video_bitrate_kbps",
+              value,
+            )
+          }
+        />
+
+        <NumberSetting
+          label="Segments waiting for upload, per camera"
+          value={settings.pending_upload_limit}
+          suffix="max"
+          min={1}
+          onChange={(value) =>
+            updateSetting(
+              "pending_upload_limit",
+              value,
+            )
+          }
+        />
+
+        <label className="rounded-2xl bg-slate-50 p-4 md:col-span-2 lg:col-span-3">
           <span className="text-sm font-medium text-slate-700">
-            Temporary recording directory
+            Temporary recording directory (RAM)
           </span>
 
           <input
@@ -373,12 +431,13 @@ export default function CameraPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold text-slate-950">
-              Day / Night Presets
+              Day / Night Presets (ESP32-CAM only)
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
-              Cameras automatically switch presets
-              according to these times.
+              ESP32-CAM cameras automatically switch
+              presets according to these times. RTSP
+              cameras handle day and night themselves.
             </p>
           </div>
 
@@ -436,7 +495,9 @@ export default function CameraPanel() {
 
             <p className="mt-1 text-sm text-slate-500">
               Upload completed CCTV segments to
-              Backblaze B2.
+              Backblaze B2. Each segment is uploaded
+              once and then deleted, whether or not
+              the upload succeeded.
             </p>
           </div>
 
@@ -462,7 +523,7 @@ export default function CameraPanel() {
           </p>
         )}
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
           <label className="rounded-2xl bg-slate-50 p-4">
             <span className="text-sm font-medium text-slate-700">
               Upload enabled
@@ -490,21 +551,10 @@ export default function CameraPanel() {
           </label>
 
           <TextField
-            label="Region"
-            value={settings.b2_region}
-            mono
-            onChange={(value) =>
-              updateSetting(
-                "b2_region",
-                value,
-              )
-            }
-          />
-
-          <TextField
             label="Bucket"
             value={settings.b2_bucket}
             mono
+            placeholder="Bucket name from the Backblaze console"
             onChange={(value) =>
               updateSetting(
                 "b2_bucket",
@@ -601,7 +651,23 @@ export default function CameraPanel() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-semibold text-slate-950">
+          Cameras
+        </h3>
+
+        <button
+          type="button"
+          onClick={addCamera}
+          disabled={pending !== null}
+          className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:opacity-50"
+        >
+          <Plus size={17} />
+          Add Camera
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-5 lg:grid-cols-2">
         {settings.cameras.map(
           (camera, index) => {
             const cameraStatus =
@@ -615,6 +681,15 @@ export default function CameraPanel() {
                 (item) =>
                   item.key === camera.key,
               );
+
+            const isEsp32 =
+              camera.source_type === "esp32_mjpeg";
+
+            const toolMissing =
+              status &&
+              (isEsp32
+                ? !status.gstreamer_available
+                : !status.ffmpeg_available);
 
             return (
               <div
@@ -649,38 +724,53 @@ export default function CameraPanel() {
                   </span>
                 </div>
 
-                <div className="mt-4 rounded-xl bg-slate-50 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-slate-600">
-                      Current applied preset
-                    </span>
+                {isEsp32 && (
+                  <div className="mt-4 rounded-xl bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-slate-600">
+                        Current applied preset
+                      </span>
 
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        cameraPreset?.preset === "day"
-                          ? "bg-amber-100 text-amber-700"
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          cameraPreset?.preset === "day"
+                            ? "bg-amber-100 text-amber-700"
+                            : cameraPreset?.preset === "night"
+                              ? "bg-indigo-100 text-indigo-700"
+                              : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {cameraPreset?.preset === "day"
+                          ? "Day"
                           : cameraPreset?.preset === "night"
-                            ? "bg-indigo-100 text-indigo-700"
-                            : "bg-slate-200 text-slate-600"
-                      }`}
-                    >
-                      {cameraPreset?.preset === "day"
-                        ? "Day"
-                        : cameraPreset?.preset === "night"
-                          ? "Night"
-                          : "Unknown"}
+                            ? "Night"
+                            : "Unknown"}
+                      </span>
+                    </div>
+
+                    {cameraPreset?.applied_at && (
+                      <div className="mt-2 text-xs text-slate-500">
+                        Last successfully applied:{" "}
+                        {new Date(
+                          cameraPreset.applied_at,
+                        ).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!isEsp32 && cameraStatus?.video_codec && (
+                  <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                    Video:{" "}
+                    <span className="font-mono font-semibold">
+                      {cameraStatus.video_codec}
+                    </span>
+                    {" "}(copied, not re-encoded). Audio:{" "}
+                    <span className="font-mono font-semibold">
+                      {cameraStatus.audio_codec ?? "none"}
                     </span>
                   </div>
-
-                  {cameraPreset?.applied_at && (
-                    <div className="mt-2 text-xs text-slate-500">
-                      Last successfully applied:{" "}
-                      {new Date(
-                        cameraPreset.applied_at,
-                      ).toLocaleString()}
-                    </div>
-                  )}
-                </div>
+                )}
 
                 <div className="mt-5 space-y-4">
                   <label className="flex items-center gap-3">
@@ -714,46 +804,108 @@ export default function CameraPanel() {
                     }
                   />
 
-                  <TextField
-                    label="IP address / host"
-                    value={camera.host}
-                    mono
-                    onChange={(value) =>
-                      updateCamera(
-                        index,
-                        "host",
-                        value,
-                      )
-                    }
-                  />
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-700">
+                      Camera type
+                    </span>
 
-                  <TextField
-                    label="Stream path"
-                    value={camera.stream_path}
-                    mono
-                    onChange={(value) =>
-                      updateCamera(
-                        index,
-                        "stream_path",
-                        value,
-                      )
-                    }
-                  />
+                    <select
+                      value={camera.source_type}
+                      onChange={(event) =>
+                        updateCamera(
+                          index,
+                          "source_type",
+                          event.target.value,
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                    >
+                      {SOURCE_TYPES.map((type) => (
+                        <option
+                          key={type.value}
+                          value={type.value}
+                        >
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                  <NumberField
-                    label="Control port"
-                    value={camera.control_port}
-                    min={1}
-                    max={65535}
-                    onChange={(value) =>
-                      updateCamera(
-                        index,
-                        "control_port",
-                        value,
-                      )
-                    }
-                  />
+                  {isEsp32 ? (
+                    <>
+                      <TextField
+                        label="IP address / host"
+                        value={camera.host}
+                        mono
+                        onChange={(value) =>
+                          updateCamera(
+                            index,
+                            "host",
+                            value,
+                          )
+                        }
+                      />
+
+                      <TextField
+                        label="Stream path"
+                        value={camera.stream_path}
+                        mono
+                        onChange={(value) =>
+                          updateCamera(
+                            index,
+                            "stream_path",
+                            value,
+                          )
+                        }
+                      />
+
+                      <NumberField
+                        label="Control port"
+                        value={camera.control_port}
+                        min={1}
+                        max={65535}
+                        onChange={(value) =>
+                          updateCamera(
+                            index,
+                            "control_port",
+                            value,
+                          )
+                        }
+                      />
+                    </>
+                  ) : (
+                    <div>
+                      <TextField
+                        label="RTSP stream URL"
+                        value={camera.stream_url}
+                        mono
+                        placeholder="rtsp://user:password@192.168.1.18:554/ch0_0.264"
+                        onChange={(value) =>
+                          updateCamera(
+                            index,
+                            "stream_url",
+                            value,
+                          )
+                        }
+                      />
+
+                      <p className="mt-2 text-xs text-slate-500">
+                        Include the camera login in the URL
+                        if it needs one. It is stored only on
+                        the Raspberry Pi. Pick the main or sub
+                        stream here to control file size.
+                      </p>
+                    </div>
+                  )}
                 </div>
+
+                {toolMissing && (
+                  <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">
+                    {isEsp32
+                      ? "GStreamer is not available on the Pi, so this camera cannot record."
+                      : "ffmpeg is not available on the Pi, so this camera cannot record."}
+                  </div>
+                )}
 
                 {cameraStatus?.last_error && (
                   <div className="mt-4 rounded-xl bg-red-50 p-3 text-xs text-red-700">
@@ -785,11 +937,26 @@ export default function CameraPanel() {
                     }
                   />
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => removeCamera(index)}
+                  disabled={pending !== null}
+                  className="mt-5 flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"
+                >
+                  <Trash2 size={15} />
+                  Remove camera
+                </button>
               </div>
             );
           },
         )}
       </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        Camera changes take effect after Save Settings
+        and the next recording start.
+      </p>
 
       <div className="mt-6 flex flex-wrap gap-3">
         <button
@@ -809,8 +976,7 @@ export default function CameraPanel() {
           }
           disabled={
             pending !== null ||
-            anyRecording ||
-            !status?.gstreamer_available
+            anyRecording
           }
           className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
         >
@@ -854,6 +1020,46 @@ export default function CameraPanel() {
         </p>
       )}
     </section>
+  );
+}
+
+
+function CapabilityCard({
+  label,
+  description,
+  available,
+  detail,
+}) {
+  return (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">
+            {label}
+          </div>
+
+          <div className="mt-1 text-sm text-slate-500">
+            {description}
+          </div>
+        </div>
+
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            available
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-red-100 text-red-700"
+          }`}
+        >
+          {available ? "Ready" : "Not Ready"}
+        </span>
+      </div>
+
+      {detail && (
+        <p className="mt-3 text-xs text-red-700">
+          {detail}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -920,6 +1126,7 @@ function TextField({
   value,
   onChange,
   mono = false,
+  placeholder = "",
 }) {
   return (
     <label className="block">
@@ -930,6 +1137,7 @@ function TextField({
       <input
         type="text"
         value={value}
+        placeholder={placeholder}
         onChange={(event) =>
           onChange(event.target.value)
         }

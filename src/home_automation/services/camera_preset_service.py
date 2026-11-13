@@ -86,6 +86,9 @@ class CameraPresetService:
                     "name": camera.name,
                     "host": camera.host,
                     "enabled": camera.enabled,
+                    "supports_presets": (
+                        camera.source_type == "esp32_mjpeg"
+                    ),
                     "preset": camera_state.get(
                         camera.key,
                         {},
@@ -134,6 +137,10 @@ class CameraPresetService:
                 return
 
             if not camera.enabled:
+                continue
+
+            # Only the ESP32 firmware has a day/night control API.
+            if camera.source_type != "esp32_mjpeg":
                 continue
 
             current_preset = camera_state.get(

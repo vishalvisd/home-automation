@@ -1,7 +1,9 @@
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import logging
 from pathlib import Path
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 from home_automation.config.camera_settings import CameraConfig
@@ -19,6 +21,14 @@ LOCAL_TIME_ZONE = ZoneInfo("Asia/Kolkata")
 
 
 class CameraUploadService:
+    """
+    Upload finished segments once, then delete them.
+
+    Segments live in RAM (/dev/shm). Nothing is ever kept: a failed
+    upload is logged and the file is deleted. If uploads fall behind,
+    the oldest waiting segment is dropped so RAM cannot fill up.
+    """
+
     def __init__(
         self,
         settings_service: CameraSettingsService,
@@ -27,11 +37,18 @@ class CameraUploadService:
         self._settings_service = settings_service
         self._storage_provider = storage_provider
 
-        # One upload worker per camera.
+        # One upload worker per configured camera. Cameras added later
+        # share these workers until the backend restarts.
+        camera_count = len(settings_service.get().cameras)
+
         self._executor = ThreadPoolExecutor(
-            max_workers=2,
+            max_workers=max(1, camera_count),
             thread_name_prefix="camera-upload",
         )
+
+        # Segments submitted but not yet picked up by a worker.
+        self._pending_lock = Lock()
+        self._pending: dict[str, deque[Path]] = {}
 
     def submit(
         self,
@@ -41,7 +58,27 @@ class CameraUploadService:
         settings = self._settings_service.get()
 
         if not settings.b2_upload_enabled:
+            # With upload off the file has nowhere to go. Delete it
+            # now rather than let RAM fill up.
+            file_path.unlink(missing_ok=True)
+
+            LOGGER.info(
+                "Upload disabled; camera segment deleted [%s]: %s",
+                camera.name,
+                file_path,
+            )
             return
+
+        self._enforce_pending_limit(
+            camera,
+            settings.pending_upload_limit,
+        )
+
+        with self._pending_lock:
+            self._pending.setdefault(
+                camera.key,
+                deque(),
+            ).append(file_path)
 
         self._executor.submit(
             self._upload_and_delete,
@@ -52,11 +89,46 @@ class CameraUploadService:
     def shutdown(self) -> None:
         self._executor.shutdown(wait=True)
 
+    def _enforce_pending_limit(
+        self,
+        camera: CameraConfig,
+        limit: int,
+    ) -> None:
+        dropped: list[Path] = []
+
+        with self._pending_lock:
+            queue = self._pending.setdefault(
+                camera.key,
+                deque(),
+            )
+
+            while len(queue) >= limit:
+                dropped.append(queue.popleft())
+
+        for file_path in dropped:
+            file_path.unlink(missing_ok=True)
+
+            LOGGER.warning(
+                "Too many segments waiting for upload; "
+                "oldest deleted without upload [%s]: %s",
+                camera.name,
+                file_path,
+            )
+
     def _upload_and_delete(
         self,
         camera: CameraConfig,
         file_path: Path,
     ) -> None:
+        with self._pending_lock:
+            queue = self._pending.get(camera.key)
+
+            if queue is None or file_path not in queue:
+                # Dropped by the pending limit before a worker got to it.
+                return
+
+            queue.remove(file_path)
+
         if not file_path.exists():
             LOGGER.warning(
                 "Camera segment missing before upload [%s]: %s",
@@ -118,6 +190,14 @@ class CameraUploadService:
         camera: CameraConfig,
         file_path: Path,
     ) -> str:
+        """
+        cam1/YYYY/MM/DD/HH/cam_1_YYYY_MM_DD_HH_MM_SS.<ext>
+
+        The extension follows the local file: .ts for ESP32-CAM
+        recordings, .mp4 for RTSP cameras. Another project downloads
+        these objects, so do not change the layout casually.
+        """
+
         timestamp = datetime.fromtimestamp(
             file_path.stat().st_mtime,
             tz=LOCAL_TIME_ZONE,
@@ -128,5 +208,6 @@ class CameraUploadService:
         return (
             f"{camera.key}/"
             f"{timestamp:%Y/%m/%d/%H}/"
-            f"cam_{camera_number}_{timestamp:%Y_%m_%d_%H_%M_%S}.ts"
+            f"cam_{camera_number}_{timestamp:%Y_%m_%d_%H_%M_%S}"
+            f"{file_path.suffix}"
         )

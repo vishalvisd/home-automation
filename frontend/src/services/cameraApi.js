@@ -7,7 +7,15 @@ async function handleResponse(response) {
 
   try {
     const body = await response.json();
-    message = body.detail || message;
+
+    if (Array.isArray(body.detail)) {
+      // FastAPI validation errors arrive as a list.
+      message = body.detail
+        .map((item) => item.msg)
+        .join(" ");
+    } else {
+      message = body.detail || message;
+    }
   } catch {
     // Response did not contain JSON.
   }
