@@ -861,7 +861,7 @@ Example:
 
 cam2/2026/08/16/20/cam_2_2026_08_16_20_23_41.ts
 
-Do not casually change this naming scheme because another project downloads these objects and assembles them into movies.
+Do not casually change this naming scheme because the downloader app in downloader/ (and previously a separate project) reads these objects and joins them into videos.
 
 Camera API
 

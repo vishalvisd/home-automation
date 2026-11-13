@@ -69,6 +69,14 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   are wired through normally closed contacts, so relay OFF can mean
   powered. Do not add appliance-state tracking.
 
+## Downloader (`downloader/`)
+
+A separate local app, not run on the Pi: Python FastAPI + b2sdk backend and a
+React UI, started with `uv run visdcam-downloader` from `downloader/`. It
+browses, downloads, joins, archives and time-lapses the clips the Pi uploads.
+It has its own `pyproject.toml`, `.venv`, `frontend/` and gitignored
+`runtime/`. See `downloader/README.md`. Clip names carry the clip END time.
+
 ## Layout
 
 ```
@@ -79,4 +87,5 @@ src/home_automation/
 frontend/src/ React UI (tabs: relays, cameras, watering, automations)
 scripts/      Pi setup and update scripts
 automation_templates/  default standalone automation scripts
+downloader/   local Mac/Windows app for the uploaded clips (own venv and UI)
 ```
