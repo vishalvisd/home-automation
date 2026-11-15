@@ -63,6 +63,16 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - Do not auto-restart the shared camera power relay because one camera
   fails.
 
+## Live view
+
+- Browser live view is served by go2rtc, a separate systemd service on
+  the Pi installed once with `scripts/install_go2rtc.sh`. The backend
+  writes `runtime/go2rtc.yaml` from the camera list and restarts go2rtc
+  through a sudoers rule. Do not re-encode video for live view.
+- The player is go2rtc's `video-rtc.js`, vendored under
+  `frontend/src/vendor`. Update it from a pinned go2rtc tag, never edit
+  it by hand.
+
 ## Relay rules that are deliberate
 
 - Relay ON/OFF means the relay coil, not the appliance. Some appliances
@@ -85,7 +95,7 @@ src/home_automation/
   config/     pydantic settings models and static hardware config
   services/   long-lived services (relays, watering, cameras, upload)
 frontend/src/ React UI (tabs: relays, cameras, watering, automations)
-scripts/      Pi setup and update scripts
+scripts/      Pi setup and update scripts, go2rtc install, LAN camera finder
 automation_templates/  default standalone automation scripts
 downloader/   local Mac/Windows app for the uploaded clips (own venv and UI)
 ```

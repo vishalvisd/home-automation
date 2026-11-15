@@ -8,6 +8,7 @@ import {
 
 import AutomationsPanel from "./components/AutomationsPanel";
 import CameraPanel from "./components/CameraPanel";
+import LiveViewPanel from "./components/LiveViewPanel";
 import RelayCard from "./components/RelayCard";
 import WateringPanel from "./components/WateringPanel";
 import { RELAYS } from "./config/relays";
@@ -21,6 +22,10 @@ const TABS = [
   {
     key: "cameras",
     label: "CCTV Cameras",
+  },
+  {
+    key: "live",
+    label: "Live View",
   },
   {
     key: "watering",
@@ -173,6 +178,16 @@ export default function App() {
           }
         >
           <CameraPanel />
+        </div>
+
+        <div
+          className={
+            activeTab === "live"
+              ? "block"
+              : "hidden"
+          }
+        >
+          <LiveViewPanel active={activeTab === "live"} />
         </div>
 
         <div

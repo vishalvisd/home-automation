@@ -28,6 +28,11 @@ class CameraConfig(BaseModel):
     # Ignored for ESP32-CAM cameras.
     stream_url: str = ""
 
+    # RTSP field, optional. The camera's smaller sub stream, used only
+    # for live view in the browser (go2rtc). When empty, live view uses
+    # stream_url. Ignored for ESP32-CAM cameras.
+    live_stream_url: str = ""
+
     @model_validator(mode="after")
     def validate_source_fields(self) -> "CameraConfig":
         if self.source_type == "esp32_mjpeg":
@@ -40,6 +45,13 @@ class CameraConfig(BaseModel):
             if not self.stream_url.strip().lower().startswith("rtsp://"):
                 raise ValueError(
                     f"{self.name}: the stream URL must start with rtsp://"
+                )
+
+            live_url = self.live_stream_url.strip()
+            if live_url and not live_url.lower().startswith("rtsp://"):
+                raise ValueError(
+                    f"{self.name}: the live view stream URL must start "
+                    "with rtsp://"
                 )
 
         return self

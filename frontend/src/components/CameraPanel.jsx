@@ -214,6 +214,7 @@ export default function CameraPanel() {
             stream_path: "/stream",
             control_port: 8080,
             stream_url: "",
+            live_stream_url: "",
           },
         ],
       };
@@ -895,6 +896,28 @@ export default function CameraPanel() {
                         the Raspberry Pi. Pick the main or sub
                         stream here to control file size.
                       </p>
+
+                      <div className="mt-4">
+                        <TextField
+                          label="Live view stream URL (optional)"
+                          value={camera.live_stream_url ?? ""}
+                          mono
+                          placeholder="rtsp://user:password@192.168.1.18:554/ch0_1.264"
+                          onChange={(value) =>
+                            updateCamera(
+                              index,
+                              "live_stream_url",
+                              value,
+                            )
+                          }
+                        />
+
+                        <p className="mt-2 text-xs text-slate-500">
+                          The camera's smaller sub stream, used only
+                          for the Live View tab. Leave empty to watch
+                          the recording stream instead.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>

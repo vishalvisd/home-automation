@@ -6,6 +6,7 @@ from home_automation.api.dependencies import (
     get_camera_preset_service,
     get_camera_recorder_service,
     get_camera_settings_service,
+    get_live_view_service,
 )
 from home_automation.config.camera_settings import (
     CameraSettings,
@@ -19,6 +20,7 @@ from home_automation.services.camera_preset_service import (
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
+from home_automation.services.live_view_service import LiveViewService
 
 from pydantic import BaseModel, Field
 
@@ -53,6 +55,11 @@ CameraPresetDependency = Annotated[
     Depends(get_camera_preset_service),
 ]
 
+LiveViewDependency = Annotated[
+    LiveViewService,
+    Depends(get_live_view_service),
+]
+
 class BackblazeCredentialsRequest(BaseModel):
     key_id: str = Field(min_length=1)
     application_key: str = Field(min_length=1)
@@ -74,15 +81,32 @@ def get_settings(
 def save_settings(
     settings: CameraSettings,
     service: CameraSettingsDependency,
+    live_view: LiveViewDependency,
 ) -> CameraSettings:
     """
     Persist camera settings.
 
     Recording pipeline changes take effect the next time
-    recording is started.
+    recording is started. Live view (go2rtc) is updated at once.
     """
 
-    return service.save(settings)
+    saved = service.save(settings)
+    live_view.sync()
+    return saved
+
+
+@router.get("/live")
+def live_view_status(
+    live_view: LiveViewDependency,
+) -> dict:
+    return live_view.status()
+
+
+@router.post("/live/sync")
+def live_view_sync(
+    live_view: LiveViewDependency,
+) -> dict:
+    return live_view.sync()
 
 
 @router.get("/preset/status")

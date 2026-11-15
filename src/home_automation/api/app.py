@@ -17,6 +17,9 @@ from home_automation.config.application import (
     CAMERA_PRESET_STATE_FILE,
     CAMERA_SETTINGS_FILE,
     FRONTEND_DIST_DIRECTORY,
+    GO2RTC_CONFIG_FILE,
+    GO2RTC_SERVICE_NAME,
+    LIVE_VIEW_PORT,
     WATERING_SCHEDULE_STATE_FILE,
     WATERING_SETTINGS_FILE,
     BACKBLAZE_CREDENTIALS_FILE,
@@ -34,6 +37,7 @@ from home_automation.services.camera_preset_service import (
 from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
+from home_automation.services.live_view_service import LiveViewService
 from home_automation.services.relay_manager import RelayManager
 from home_automation.services.watering_scheduler_service import (
     WateringSchedulerService,
@@ -114,6 +118,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         CAMERA_PRESET_STATE_FILE,
     )
 
+    live_view_service = LiveViewService(
+        camera_settings_service,
+        GO2RTC_CONFIG_FILE,
+        GO2RTC_SERVICE_NAME,
+        LIVE_VIEW_PORT,
+    )
+
     app.state.relay_manager = relay_manager
     app.state.watering_settings_service = watering_settings_service
     app.state.watering_service = watering_service
@@ -123,10 +134,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.camera_recorder_service = camera_recorder_service
     app.state.camera_preset_service = camera_preset_service
     app.state.backblaze_credentials_service = backblaze_credentials_service
+    app.state.live_view_service = live_view_service
 
     watering_scheduler_service.start()
     camera_preset_service.start()
     camera_recorder_service.start_if_enabled()
+
+    # Keep go2rtc's camera list in step with ours. Harmless when go2rtc
+    # is not installed: it only logs a warning.
+    live_view_service.sync()
 
     try:
         yield

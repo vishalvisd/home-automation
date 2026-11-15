@@ -168,6 +168,8 @@ home-automation/
 ├── scripts/
 │   ├── setup_pi.sh             # Fresh Pi setup
 │   ├── update_pi.sh            # Normal safe deployment/update
+│   ├── install_go2rtc.sh       # One-time go2rtc install for live view
+│   ├── find_camera.py          # Desk tool: find a camera on the LAN, get its RTSP URL
 │   └── test_relays.py          # Sequential relay hardware test
 ├── src/home_automation/
 │   ├── api/
@@ -237,6 +239,7 @@ runtime/
 ├── cameras.json
 ├── camera_preset_state.json
 ├── backblaze_credentials.json
+├── go2rtc.yaml
 └── automations/
     ├── restart_router.py
     ├── restart_cameras.py
@@ -561,7 +564,42 @@ stream (800x448) at roughly 5 MB. Which one is used is simply the URL in config.
 
 Cameras
 
-The installation started with two ESP32-CAM cameras:
+As of 2026-11-15 all three cameras are RTSP:
+
+Key
+
+Camera
+
+IP
+
+Streams
+
+cam1
+
+Trueview T18296S (Wi-Fi)
+
+192.168.1.33 (router DHCP binding)
+
+main /ch0_0.264 2304x1296 H.265 + G.711, sub /ch0_1.264 800x448
+
+cam2
+
+Tekzor TZ-1W-IP-NG5SL (wired, 2nd-floor access point)
+
+192.168.1.36 (router DHCP binding)
+
+main /live/0/MAIN 2304x1296 H.265 + G.711, sub /live/0/SUB 800x448
+
+cam3
+
+Hikvision DS-2CD202RF-I (wired, outdoor pole)
+
+192.168.1.64 (static in the camera)
+
+main /Streaming/Channels/101 1080p H.264, sub /Streaming/Channels/102, no audio hardware
+
+The two ESP32-CAM cameras below are retired but the code path stays
+supported. The installation started with them:
 
 Key
 
@@ -863,6 +901,35 @@ cam2/2026/08/16/20/cam_2_2026_08_16_20_23_41.ts
 
 Do not casually change this naming scheme because the downloader app in downloader/ (and previously a separate project) reads these objects and joins them into videos.
 
+Live view in the browser (go2rtc)
+
+Browsers cannot play RTSP. The Live View tab uses go2rtc, a separate
+systemd service on the Pi, which takes each camera's RTSP stream and
+serves it over WebRTC (MSE as fallback) without re-encoding. It connects
+to a camera only while someone is watching, so recording is unaffected.
+
+Install it once on the Pi:
+
+bash scripts/install_go2rtc.sh
+
+The script downloads a pinned go2rtc release, installs the go2rtc
+service running as the same user as the backend, and adds a sudoers
+rule allowing exactly "systemctl restart go2rtc" without a password.
+
+The backend owns go2rtc's config file, runtime/go2rtc.yaml. It rewrites
+it from runtime/cameras.json on every camera settings save and on
+backend start, and restarts go2rtc when the file changed. Each RTSP
+camera becomes a go2rtc stream named by its key (cam1, cam2, ...). The
+stream used is the camera's live_stream_url (meant for the smaller sub
+stream) and falls back to stream_url when that is empty. ESP32-CAM
+cameras are not served.
+
+The browser player is go2rtc's video-rtc.js web component, vendored in
+frontend/src/vendor (MIT) so it loads from the Pi's own page. It
+connects to ws://<pi>:1984/api/ws?src=camN. H.265 plays in Safari and
+in Chrome on Mac; for other devices set the camera's sub stream to
+H.264. go2rtc listens on port 1984 on all interfaces with no login.
+
 Camera API
 
 GET  /api/cameras/settings
@@ -873,6 +940,8 @@ POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
 GET  /api/cameras/backblaze/credentials
 PUT  /api/cameras/backblaze/credentials
+GET  /api/cameras/live
+POST /api/cameras/live/sync
 
 Changing camera settings is persistent, but recording-pipeline changes take effect the next time recording is started.
 
@@ -979,6 +1048,8 @@ POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
 GET  /api/cameras/backblaze/credentials
 PUT  /api/cameras/backblaze/credentials
+GET  /api/cameras/live
+POST /api/cameras/live/sync
 
 Raspberry Pi process management
 
