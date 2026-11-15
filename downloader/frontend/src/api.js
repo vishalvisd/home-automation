@@ -35,7 +35,8 @@ export const api = {
   cameras: () => fetch("/api/browse/cameras").then(handle),
   days: (camera) => fetch(`/api/browse/days?camera=${camera}`).then(handle),
   clips: (camera, day) => fetch(`/api/browse/clips?camera=${camera}&day=${day}`).then(handle),
-  previewUrl: (key) => `/api/preview?key=${encodeURIComponent(key)}`,
+  previewUrl: (key, account = "") =>
+    `/api/preview?key=${encodeURIComponent(key)}&account=${encodeURIComponent(account)}`,
 
   jobs: () => fetch("/api/jobs").then(handle),
   startDownload: (request) => fetch("/api/jobs/download", json("POST", request)).then(handle),
@@ -48,9 +49,6 @@ export const api = {
   fileInfo: (path) => fetch(`/api/library/info?path=${encodeURIComponent(path)}`).then(handle),
   openFolder: (path) => fetch("/api/library/open", json("POST", { path })).then(handle),
   deleteFile: (path) => fetch(`/api/library?path=${encodeURIComponent(path)}`, { method: "DELETE" }).then(handle),
-
-  archiveStatus: () => fetch("/api/archive/status").then(handle),
-  runArchive: () => fetch("/api/archive/run", { method: "POST" }).then(handle),
 };
 
 export function formatBytes(size) {

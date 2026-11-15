@@ -31,6 +31,8 @@ class Clip:
     size: int
     end_time: datetime
     segment_seconds: int
+    # Name of the Backblaze account the clip was found in ("" if unknown).
+    account: str = ""
 
     @property
     def start_time(self) -> datetime:
@@ -56,6 +58,7 @@ class Clip:
             "extension": self.extension,
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat(),
+            "account": self.account,
         }
 
 
@@ -64,6 +67,7 @@ def parse_clip(
     size: int,
     timezone: ZoneInfo,
     segment_seconds: int,
+    account: str = "",
 ) -> Clip | None:
     match = CLIP_KEY_PATTERN.match(key)
 
@@ -86,6 +90,7 @@ def parse_clip(
         size=size,
         end_time=end_time,
         segment_seconds=segment_seconds,
+        account=account,
     )
 
 

@@ -70,6 +70,7 @@ def system_info(
         "ffmpeg_path": tools.ffmpeg,
         "ffmpeg_version": tools.version(),
         "video_encoders": encoders,
-        "b2_configured": settings.has_b2_credentials(),
+        "pi_configured": settings.has_pi(),
+        "pi_url": settings.pi_url,
         "output_directory": settings.output_directory,
     }

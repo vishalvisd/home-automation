@@ -36,9 +36,9 @@ export default function BrowsePanel({ system, onJobStarted }) {
   }
 
   useEffect(() => {
-    if (system?.b2_configured) loadCameras();
+    if (system?.pi_configured) loadCameras();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [system?.b2_configured]);
+  }, [system?.pi_configured]);
 
   useEffect(() => {
     if (!camera) return;
@@ -87,10 +87,10 @@ export default function BrowsePanel({ system, onJobStarted }) {
     }
   }
 
-  if (system && !system.b2_configured) {
+  if (system && !system.pi_configured) {
     return (
       <Card title="Browse clips">
-        <p className="mt-3 text-sm text-slate-600">Enter your Backblaze bucket and key in Settings first.</p>
+        <p className="mt-3 text-sm text-slate-600">Enter the Raspberry Pi address in Settings first.</p>
       </Card>
     );
   }
@@ -103,7 +103,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
     <div className="space-y-4">
       <Card
         title="Browse clips"
-        subtitle="Pick a camera and a day. Each clip is one 3-minute recording as uploaded by the Pi."
+        subtitle="Pick a camera and a day. Each clip is one 3-minute recording as uploaded by the Pi. Every Backblaze account the Pi knows is searched."
         right={<Button icon={RefreshCw} variant="secondary" onClick={loadCameras}>Refresh</Button>}
       >
         <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -112,7 +112,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
               {cameras.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           </Field>
-          <Field label="Day" hint={days.length ? `${days.length} day(s) in the bucket` : "No days found"}>
+          <Field label="Day" hint={days.length ? `${days.length} day(s) across all accounts` : "No days found"}>
             <select className={inputClass} value={day} onChange={(e) => setDay(e.target.value)}>
               {days.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
@@ -122,6 +122,11 @@ export default function BrowsePanel({ system, onJobStarted }) {
               <>
                 <div className="text-2xl font-semibold text-slate-900">{data.count} clips</div>
                 <div>{formatBytes(data.bytes)} on this day</div>
+                {data.clips.length > 0 && (
+                  <div className="mt-1 text-xs text-slate-500">
+                    Account: {[...new Set(data.clips.map((clip) => clip.account || "?"))].join(", ")}
+                  </div>
+                )}
               </>
             ) : "Choose a day"}
           </div>
@@ -166,7 +171,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
                 <span className="font-mono">{preview.filename}</span>
                 <button type="button" onClick={() => setPreview(null)} className="flex items-center gap-1"><X size={14} /> close</button>
               </div>
-              <video key={preview.key} controls autoPlay className="mt-2 w-full rounded-xl" src={api.previewUrl(preview.key)} />
+              <video key={preview.key} controls autoPlay className="mt-2 w-full rounded-xl" src={api.previewUrl(preview.key, preview.account)} />
               <p className="mt-2 text-xs text-slate-400">The clip is downloaded to a local cache first, so the first play of a clip takes a few seconds.</p>
             </div>
           )}

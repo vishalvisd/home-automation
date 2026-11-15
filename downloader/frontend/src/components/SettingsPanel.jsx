@@ -9,6 +9,7 @@ export default function SettingsPanel({ system, onSaved }) {
   const [pending, setPending] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [testResults, setTestResults] = useState(null);
 
   useEffect(() => {
     api.getSettings().then(setForm).catch((e) => setError(e.message));
@@ -38,12 +39,15 @@ export default function SettingsPanel({ system, onSaved }) {
     setPending("test");
     setMessage(null);
     setError(null);
+    setTestResults(null);
     try {
       const result = await api.testConnection();
+      setTestResults(result.accounts);
+      const failed = result.accounts.filter((account) => !account.ok).length;
       setMessage(
-        `Connected to bucket "${result.bucket}". Cameras found: ${
-          result.cameras.length ? result.cameras.join(", ") : "none yet"
-        }.`,
+        failed === 0
+          ? `All ${result.accounts.length} account(s) reachable.`
+          : `${failed} of ${result.accounts.length} account(s) failed.`,
       );
     } catch (e) {
       setError(e.message);
@@ -57,25 +61,31 @@ export default function SettingsPanel({ system, onSaved }) {
   return (
     <div className="space-y-4">
       <Card
-        title="Backblaze B2"
-        subtitle="Use an application key restricted to the CCTV bucket. The key is stored only on this computer, in downloader/runtime/settings.json."
+        title="Raspberry Pi"
+        subtitle="The Pi holds the list of Backblaze accounts and rotates uploads between them, one account per day. This app fetches that list from the Pi every time it browses or downloads, and keeps no copy."
       >
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <Field label="Bucket">
-            <input className={`${inputClass} font-mono`} value={form.b2_bucket} onChange={(e) => set("b2_bucket", e.target.value)} placeholder="visd-cctv-eu" />
-          </Field>
-          <Field label="Application key ID">
-            <input className={`${inputClass} font-mono`} value={form.b2_key_id} onChange={(e) => set("b2_key_id", e.target.value)} autoComplete="off" />
-          </Field>
-          <Field label="Application key" hint={form.b2_application_key_set ? "A key is saved. Enter a new one only to replace it." : "Not set yet."}>
-            <input type="password" className={`${inputClass} font-mono`} value={form.b2_application_key} onChange={(e) => set("b2_application_key", e.target.value)} autoComplete="new-password" placeholder={form.b2_application_key_set ? "••••••••" : ""} />
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Field label="Pi address" hint="The home-automation backend, as you open it in the browser.">
+            <input className={`${inputClass} font-mono`} value={form.pi_url} onChange={(e) => set("pi_url", e.target.value)} placeholder="http://192.168.1.31:8000" />
           </Field>
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button icon={Save} onClick={save} busy={pending === "save"} disabled={pending !== null}>Save Settings</Button>
-          <Button icon={Plug} variant="secondary" onClick={test} busy={pending === "test"} disabled={pending !== null || !system?.b2_configured}>Test Connection</Button>
+          <Button icon={Plug} variant="secondary" onClick={test} busy={pending === "test"} disabled={pending !== null || !system?.pi_configured}>Test Accounts</Button>
         </div>
         <Message error={error} message={message} />
+        {testResults && (
+          <ul className="mt-4 space-y-2 text-sm">
+            {testResults.map((account) => (
+              <li key={account.name} className={`rounded-xl p-3 ${account.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
+                <span className="font-semibold">{account.name}</span>
+                {account.ok
+                  ? ` — bucket ${account.bucket}, cameras: ${account.cameras.length ? account.cameras.join(", ") : "none yet"}`
+                  : ` — ${account.detail}`}
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card title="Folders and tools">

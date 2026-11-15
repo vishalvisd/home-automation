@@ -25,12 +25,11 @@ def _allowed_roots(settings: SettingsService) -> list[Path]:
     current = settings.get()
     return [
         Path(current.output_directory).expanduser().resolve(),
-        Path(current.archive_directory).expanduser().resolve(),
     ]
 
 
 def _safe_path(raw: str, settings: SettingsService) -> Path:
-    """Only files inside the output or archive folders may be touched."""
+    """Only files inside the output folder may be touched."""
 
     path = Path(raw).expanduser().resolve()
 

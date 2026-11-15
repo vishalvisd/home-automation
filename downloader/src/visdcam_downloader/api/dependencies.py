@@ -1,6 +1,5 @@
 from fastapi import Request
 
-from visdcam_downloader.services.archive_service import ArchiveService
 from visdcam_downloader.services.b2_client import B2Client
 from visdcam_downloader.services.job_service import JobService
 from visdcam_downloader.services.settings_service import SettingsService
@@ -22,6 +21,3 @@ def get_job_service(request: Request) -> JobService:
 def get_workflows(request: Request) -> Workflows:
     return request.app.state.workflows
 
-
-def get_archive_service(request: Request) -> ArchiveService:
-    return request.app.state.archive_service

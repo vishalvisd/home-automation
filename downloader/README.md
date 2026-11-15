@@ -3,10 +3,15 @@
 A small local app for the CCTV clips the Raspberry Pi uploads to Backblaze B2.
 It runs on your Mac or Windows computer and opens in the browser. It can:
 
-- browse the bucket by camera and day and preview any 3-minute clip;
+- browse the clips by camera and day and preview any 3-minute clip;
 - download a time window and join the clips into one video, with audio;
-- keep a local archive of every clip before B2's lifecycle rule deletes it;
 - make time-lapse videos from any downloaded file, using the hardware encoder.
+
+The Pi rotates its uploads between several Backblaze accounts, one account
+per calendar day, and is the only place the account list lives. This app
+fetches that list from the Pi (`/api/cameras/backblaze/accounts/export`) on
+every browse or download, asks every account in parallel, and merges the
+results. It keeps no copy of the keys.
 
 It lives in the `downloader/` folder of the home-automation repository but is
 a separate program. The Pi never runs it.
@@ -16,7 +21,7 @@ a separate program. The Pi never runs it.
 - Python 3.13 and [uv](https://docs.astral.sh/uv/).
 - ffmpeg on the PATH, or its location set in Settings.
   Mac: `brew install ffmpeg`. Windows: `winget install ffmpeg`.
-- A Backblaze application key restricted to the CCTV bucket.
+- The Pi reachable on the home network.
 
 ## Run
 
@@ -29,8 +34,8 @@ uv run visdcam-downloader
 The browser opens at <http://127.0.0.1:8800>. Stop it with Ctrl+C.
 Add `--no-browser` to skip opening the browser, `--port 9000` to change the port.
 
-On first start go to Settings, enter the bucket name, key ID and application
-key, save, and press Test Connection.
+On first start go to Settings, check the Pi address, save, and press
+Test Accounts. It lists every account the Pi knows and whether it answers.
 
 ## Where things are stored
 
@@ -38,16 +43,14 @@ Everything local lives under `downloader/runtime/`, which is gitignored:
 
 ```
 runtime/
-├── settings.json        B2 key, folders, archive schedule (owner-only on Mac/Linux)
+├── settings.json        Pi address, folders (owner-only on Mac/Linux)
 ├── jobs.json            job history
-├── archive_state.json   last archive run
 ├── preview_cache/       clips played in the Browse tab (capped at 1 GB)
 └── tmp/                 clips being downloaded for a join; cleared after each job
 ```
 
 Joined videos and time-lapses go to the output folder, by default
-`~/Movies/visdcam` on Mac and `~/Videos/visdcam` on Windows. The archive goes
-to `<output>/archive` unless you point it at another disk.
+`~/Movies/visdcam` on Mac and `~/Videos/visdcam` on Windows.
 
 ## How clips are named
 
@@ -76,14 +79,6 @@ audio. Higher speeds drop the audio and use the first encoder that works from
 this list: `h264_videotoolbox` / `hevc_videotoolbox` on Mac; `nvenc`, `qsv` or
 `amf` on Windows; `libx264` / `libx265` as the software fallback.
 
-## Archive
-
-The archive job lists every camera and day in the bucket and downloads each
-clip to `<archive>/camN/YYYY/MM/DD/`, skipping files that already exist with
-the same size. With "Run automatically" on, it runs once a day at the set time
-while the app is running. "Keep for (days)" prunes old day folders; 0 keeps
-everything.
-
 ## Layout
 
 ```
@@ -100,8 +95,7 @@ downloader/
 │       ├── timelapse.py      remux and speed-up with encoder fallback
 │       ├── ffmpeg_tools.py   find and run ffmpeg/ffprobe with progress
 │       ├── job_service.py    one-at-a-time background job queue with history
-│       ├── workflows.py      download, timelapse and archive jobs
-│       └── archive_service.py daily archive scheduler
+│       └── workflows.py      download and timelapse jobs
 └── frontend/                 React + Vite + Tailwind; dist/ is committed
 ```
 

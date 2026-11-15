@@ -32,15 +32,13 @@ class SettingsService:
         return settings
 
     def update(self, changes: dict) -> Settings:
-        """Apply a partial update. An empty application key keeps the old one."""
+        """Apply a partial update; unknown keys are ignored."""
 
         with self._lock:
             current = self._read()
             data = current.model_dump()
 
             for key, value in changes.items():
-                if key == "b2_application_key" and not str(value).strip():
-                    continue
                 if key in data:
                     data[key] = value
 

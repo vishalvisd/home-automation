@@ -1,4 +1,4 @@
-"""The actual work behind each job kind: download, timelapse, archive."""
+"""The actual work behind each job kind: download and timelapse."""
 
 import logging
 import shutil
@@ -227,71 +227,3 @@ class Workflows:
             "encoder": info["encoder"],
             "bytes": output.stat().st_size,
         }
-
-    # ------------------------------------------------------------------
-    # Local archive: mirror everything in the bucket
-    # ------------------------------------------------------------------
-
-    def archive_job(self, context: JobContext) -> dict:
-        settings = self._settings_service.get()
-        archive_root = Path(settings.archive_directory).expanduser()
-        archive_root.mkdir(parents=True, exist_ok=True)
-
-        context.progress(0.0, "Listing bucket")
-        cameras = self._b2.list_cameras()
-        clips: list[Clip] = []
-
-        for camera in cameras:
-            for day in self._b2.list_days(camera):
-                clips.extend(self._b2.list_clips_for_day(camera, day))
-
-        context.log(f"{len(clips)} clip(s) in bucket across {len(cameras)} camera(s)")
-
-        if clips:
-            self._download_many(
-                context, clips,
-                lambda clip: archive_root / clip.key,
-                skip_existing=True,
-                progress_span=(0.0, 0.95),
-            )
-
-        pruned = self._prune_archive(archive_root, settings.archive_keep_days, context)
-
-        return {
-            "clips_in_bucket": len(clips),
-            "bytes_in_bucket": sum(clip.size for clip in clips),
-            "pruned_files": pruned,
-            "archive_directory": str(archive_root),
-        }
-
-    def _prune_archive(self, root: Path, keep_days: int, context: JobContext) -> int:
-        if keep_days <= 0:
-            return 0
-
-        cutoff = datetime.now() - timedelta(days=keep_days)
-        removed = 0
-
-        for day_dir in root.glob("cam*/*/*/*"):
-            if not day_dir.is_dir():
-                continue
-            try:
-                parts = day_dir.relative_to(root).parts  # camN, YYYY, MM, DD
-                day = datetime(int(parts[1]), int(parts[2]), int(parts[3]))
-            except (ValueError, IndexError):
-                continue
-
-            if day < cutoff.replace(hour=0, minute=0, second=0, microsecond=0):
-                count = sum(1 for _ in day_dir.rglob("*") if _.is_file())
-                shutil.rmtree(day_dir, ignore_errors=True)
-                removed += count
-                context.log(f"Pruned {day_dir.relative_to(root)} ({count} files)")
-
-        # Remove empty month/year folders left behind.
-        for folder in sorted(root.glob("cam*/*/*"), reverse=True):
-            if folder.is_dir() and not any(folder.iterdir()):
-                folder.rmdir()
-        for folder in sorted(root.glob("cam*/*"), reverse=True):
-            if folder.is_dir() and not any(folder.iterdir()):
-                folder.rmdir()
-
-        return removed

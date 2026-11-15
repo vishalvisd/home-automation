@@ -34,12 +34,12 @@ def default_output_directory() -> Path:
 
 
 class Settings(BaseModel):
-    """Persistent local settings. The application key never leaves this machine."""
+    """Persistent local settings."""
 
-    # Backblaze B2. Use an application key restricted to the bucket.
-    b2_key_id: str = ""
-    b2_application_key: str = ""
-    b2_bucket: str = ""
+    # The Raspberry Pi running home-automation. It holds the list of
+    # Backblaze accounts (and their keys); this app fetches that list
+    # from the Pi on every operation and keeps no copy of it.
+    pi_url: str = "http://192.168.1.31:8000"
 
     # Where joined videos and time-lapses go.
     output_directory: str = str(default_output_directory())
@@ -54,28 +54,13 @@ class Settings(BaseModel):
     # Optional explicit ffmpeg location (Windows users often need this).
     ffmpeg_path: str = ""
 
-    # Local archive: mirror every clip to a local disk before B2 deletes it.
-    archive_enabled: bool = False
-    archive_directory: str = str(default_output_directory() / "archive")
-    archive_time: str = "03:00"
-    archive_keep_days: int = Field(default=0, ge=0)  # 0 = keep forever
-
-    def has_b2_credentials(self) -> bool:
-        return bool(
-            self.b2_key_id.strip()
-            and self.b2_application_key.strip()
-            and self.b2_bucket.strip()
-        )
+    def has_pi(self) -> bool:
+        return bool(self.pi_url.strip())
 
     def public_view(self) -> dict:
-        """Settings as sent to the UI. The secret is never returned."""
+        """Settings as sent to the UI."""
 
-        data = self.model_dump()
-        data["b2_application_key"] = ""
-        data["b2_application_key_set"] = bool(
-            self.b2_application_key.strip()
-        )
-        return data
+        return self.model_dump()
 
 
 def ensure_runtime_directories() -> None:

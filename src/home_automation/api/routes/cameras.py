@@ -162,6 +162,21 @@ def get_backblaze_accounts(
     return service.status()
 
 
+@router.get("/backblaze/accounts/export")
+def export_backblaze_accounts(
+    service: BackblazeCredentialsDependency,
+) -> dict:
+    """
+    The full account list including application keys, for the
+    downloader on the Mac, which looks in every account for a day's
+    clips. This is the one endpoint that returns secrets. The Pi API
+    has no login yet (camera passwords are likewise visible in
+    /settings); the planned passphrase login will cover both.
+    """
+
+    return service.get().model_dump()
+
+
 @router.put("/backblaze/accounts")
 def save_backblaze_accounts(
     request: BackblazeAccountsRequest,

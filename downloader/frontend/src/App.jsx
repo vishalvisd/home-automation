@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { Archive, Film, FolderOpen, ListChecks, Settings as SettingsIcon } from "lucide-react";
+import { Film, FolderOpen, ListChecks, Settings as SettingsIcon } from "lucide-react";
 
 import { api } from "./api";
 import BrowsePanel from "./components/BrowsePanel";
 import JobsPanel from "./components/JobsPanel";
 import LibraryPanel from "./components/LibraryPanel";
-import ArchivePanel from "./components/ArchivePanel";
 import SettingsPanel from "./components/SettingsPanel";
 import { Badge } from "./components/ui";
 
@@ -13,7 +12,6 @@ const TABS = [
   { key: "browse", label: "Browse", icon: Film },
   { key: "jobs", label: "Jobs", icon: ListChecks },
   { key: "library", label: "Library", icon: FolderOpen },
-  { key: "archive", label: "Archive", icon: Archive },
   { key: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -46,11 +44,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (system && !system.b2_configured) {
+    if (system && !system.pi_configured) {
       setTab("settings");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [system?.b2_configured]);
+  }, [system?.pi_configured]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -62,7 +60,7 @@ export default function App() {
             </div>
             <h1 className="mt-1 text-2xl font-semibold">CCTV Downloader</h1>
             <p className="mt-1 text-sm text-slate-300">
-              Browse, download, join, archive and time-lapse clips from Backblaze B2.
+              Browse, download, join and time-lapse clips from the Backblaze accounts the Pi uploads to.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -73,8 +71,8 @@ export default function App() {
               </Badge>
             )}
             {system && (
-              <Badge tone={system.b2_configured ? "green" : "amber"}>
-                {system.b2_configured ? "B2 configured" : "B2 not configured"}
+              <Badge tone={system.pi_configured ? "green" : "amber"}>
+                {system.pi_configured ? `Pi ${system.pi_url}` : "Pi address not set"}
               </Badge>
             )}
           </div>
@@ -104,7 +102,6 @@ export default function App() {
         <div className={tab === "browse" ? "" : "hidden"}><BrowsePanel system={system} onJobStarted={() => setTab("jobs")} /></div>
         <div className={tab === "jobs" ? "" : "hidden"}><JobsPanel /></div>
         <div className={tab === "library" ? "" : "hidden"}><LibraryPanel system={system} onJobStarted={() => setTab("jobs")} /></div>
-        <div className={tab === "archive" ? "" : "hidden"}><ArchivePanel /></div>
         <div className={tab === "settings" ? "" : "hidden"}><SettingsPanel system={system} onSaved={refreshSystem} /></div>
       </main>
     </div>

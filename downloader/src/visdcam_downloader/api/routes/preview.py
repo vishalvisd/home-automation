@@ -49,6 +49,7 @@ def preview_clip(
     settings: SettingsDependency,
     workflows: WorkflowsDependency,
     key: str = Query(),
+    account: str = Query(""),
 ) -> FileResponse:
     """Download one clip into the local cache (converting .ts to MP4) and serve it."""
 
@@ -56,7 +57,9 @@ def preview_clip(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a clip key")
 
     current = settings.get()
-    clip = parse_clip(key, 0, ZoneInfo(current.clip_timezone), current.segment_seconds)
+    clip = parse_clip(
+        key, 0, ZoneInfo(current.clip_timezone), current.segment_seconds, account=account,
+    )
     if clip is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a clip key")
 

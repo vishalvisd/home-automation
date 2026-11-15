@@ -87,7 +87,8 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 
 A separate local app, not run on the Pi: Python FastAPI + b2sdk backend and a
 React UI, started with `uv run visdcam-downloader` from `downloader/`. It
-browses, downloads, joins, archives and time-lapses the clips the Pi uploads.
+browses, downloads, joins and time-lapses the clips the Pi uploads. It
+gets the Backblaze account list from the Pi and searches every account.
 It has its own `pyproject.toml`, `.venv`, `frontend/` and gitignored
 `runtime/`. See `downloader/README.md`. Clip names carry the clip END time.
 
