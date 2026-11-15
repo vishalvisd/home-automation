@@ -28,6 +28,9 @@ from home_automation.api.dependencies import (
     get_backblaze_credentials_service,
     get_cloud_rotation_service,
 )
+from home_automation.services.backblaze_b2_storage_provider import (
+    test_account,
+)
 from home_automation.services.backblaze_credentials_service import (
     BackblazeCredentialsService,
 )
@@ -172,6 +175,24 @@ def save_backblaze_accounts(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
     return service.status()
+
+
+@router.post("/backblaze/accounts/test")
+def test_backblaze_account(
+    request: BackblazeAccountRequest,
+    service: BackblazeCredentialsDependency,
+) -> dict:
+    """
+    Authorise one account and look up its bucket, uploading nothing.
+    An empty application key means the one stored under that name.
+    """
+
+    try:
+        account = service.account_from_request(request.model_dump())
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    return test_account(account)
 
 
 @router.get("/backblaze/rotation")

@@ -81,6 +81,58 @@ class SharedRateProgressListener(AbstractProgressListener):
         self._limiter.consume(delta)
 
 
+def test_account(account: BackblazeAccount) -> dict:
+    """
+    Check an account without uploading anything: authorise with its
+    key and look up its bucket. Returns a small result for the UI.
+    """
+
+    try:
+        b2_api = B2Api(InMemoryAccountInfo(), max_upload_workers=1)
+        b2_api.authorize_account(
+            "production",
+            account.key_id,
+            account.application_key,
+        )
+    except Exception as error:
+        return {
+            "ok": False,
+            "detail": f"Authorisation failed: {error}",
+        }
+
+    try:
+        bucket = b2_api.get_bucket_by_name(account.bucket)
+    except Exception as error:
+        return {
+            "ok": False,
+            "detail": (
+                f"Authorised, but bucket '{account.bucket}' was not "
+                f"found or the key cannot see it: {error}"
+            ),
+        }
+
+    allowed = b2_api.account_info.get_allowed() or {}
+    capabilities = allowed.get("capabilities") or []
+    missing = [
+        capability
+        for capability in ("writeFiles", "listBuckets")
+        if capability not in capabilities
+    ]
+
+    if "writeFiles" in missing:
+        return {
+            "ok": False,
+            "detail": "The key cannot write files (missing writeFiles)",
+        }
+
+    return {
+        "ok": True,
+        "detail": (
+            f"OK: bucket '{bucket.name}' reachable, key can write files"
+        ),
+    }
+
+
 class BackblazeB2StorageProvider:
     """
     Upload clips to Backblaze B2, to the account chosen for the clip's

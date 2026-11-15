@@ -106,6 +106,41 @@ class BackblazeCredentialsService:
 
         return accounts
 
+    def account_from_request(self, row: dict) -> BackblazeAccount:
+        """
+        Build one account from a UI row, filling an empty application
+        key from the stored account of the same name. Nothing is saved.
+        """
+
+        name = str(row.get("name", "")).strip()
+        application_key = str(row.get("application_key", "")).strip()
+
+        if not application_key:
+            existing = next(
+                (
+                    account
+                    for account in self.get().accounts
+                    if account.name == name
+                ),
+                None,
+            )
+
+            if existing is None:
+                raise ValueError(
+                    f"Account '{name or '(unnamed)'}' has no stored "
+                    "application key; enter it first"
+                )
+
+            application_key = existing.application_key
+
+        return BackblazeAccount(
+            name=name,
+            key_id=str(row.get("key_id", "")),
+            application_key=application_key,
+            bucket=str(row.get("bucket", "")),
+            enabled=bool(row.get("enabled", True)),
+        )
+
     def migrate_single_key(self, legacy_bucket: str) -> None:
         """
         Convert the old one-key file ({"key_id", "application_key"})

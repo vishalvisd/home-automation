@@ -903,8 +903,10 @@ upgrade.
 
 GET /api/cameras/backblaze/accounts returns the list without application
 keys. PUT saves it; a row with an empty application key keeps the key
-already stored under that name. GET /api/cameras/backblaze/rotation shows
-today's account and the recent map.
+already stored under that name. POST .../accounts/test authorises one
+account and looks up its bucket without uploading, so a wrong key is
+caught before that account's day comes. GET /api/cameras/backblaze/rotation
+shows today's account and the recent map.
 
 The downloader currently knows one account only; browsing days that went
 to other accounts is the next change.
@@ -963,6 +965,7 @@ POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
 GET  /api/cameras/backblaze/accounts
 PUT  /api/cameras/backblaze/accounts
+POST /api/cameras/backblaze/accounts/test
 GET  /api/cameras/backblaze/rotation
 GET  /api/cameras/live
 POST /api/cameras/live/sync
@@ -1072,6 +1075,7 @@ POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
 GET  /api/cameras/backblaze/accounts
 PUT  /api/cameras/backblaze/accounts
+POST /api/cameras/backblaze/accounts/test
 GET  /api/cameras/backblaze/rotation
 GET  /api/cameras/live
 POST /api/cameras/live/sync

@@ -116,3 +116,19 @@ export async function getBackblazeRotation() {
 
   return handleResponse(response);
 }
+
+
+export async function testBackblazeAccount(account) {
+  const response = await fetch(
+    "/api/cameras/backblaze/accounts/test",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(account),
+    },
+  );
+
+  return handleResponse(response);
+}

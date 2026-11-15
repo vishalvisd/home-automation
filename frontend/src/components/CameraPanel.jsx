@@ -16,6 +16,7 @@ import {
   getPresetStatus,
   getRecordingStatus,
   saveBackblazeAccounts,
+  testBackblazeAccount,
   saveCameraSettings,
   startRecording,
   stopRecording,
@@ -58,6 +59,8 @@ export default function CameraPanel() {
   // typing one replaces the stored key on save.
   const [accounts, setAccounts] = useState(null);
   const [rotation, setRotation] = useState(null);
+  // Result of the last Test per account row, keyed by row index.
+  const [accountTests, setAccountTests] = useState({});
 
   async function loadSettings() {
     try {
@@ -162,6 +165,35 @@ export default function CameraPanel() {
       setError(requestError.message);
     } finally {
       setPending(null);
+    }
+  }
+
+  async function testAccount(index) {
+    const account = accounts[index];
+
+    setAccountTests((current) => ({
+      ...current,
+      [index]: { pending: true },
+    }));
+
+    try {
+      const result = await testBackblazeAccount({
+        name: account.name,
+        key_id: account.key_id,
+        application_key: account.application_key,
+        bucket: account.bucket,
+        enabled: account.enabled,
+      });
+
+      setAccountTests((current) => ({
+        ...current,
+        [index]: result,
+      }));
+    } catch (requestError) {
+      setAccountTests((current) => ({
+        ...current,
+        [index]: { ok: false, detail: requestError.message },
+      }));
     }
   }
 
@@ -727,16 +759,48 @@ export default function CameraPanel() {
                     Enabled (takes part in the rotation)
                   </label>
 
-                  <button
-                    type="button"
-                    onClick={() => removeAccount(index)}
-                    disabled={pending !== null}
-                    className="flex items-center gap-2 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
-                  >
-                    <Trash2 size={14} />
-                    Remove account
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => testAccount(index)}
+                      disabled={
+                        pending !== null ||
+                        accountTests[index]?.pending ||
+                        !account.key_id.trim() ||
+                        !account.bucket.trim() ||
+                        (!account.stored && !account.application_key.trim())
+                      }
+                      className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 disabled:opacity-50"
+                    >
+                      {accountTests[index]?.pending ? (
+                        <LoaderCircle size={14} className="animate-spin" />
+                      ) : null}
+                      Test
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => removeAccount(index)}
+                      disabled={pending !== null}
+                      className="flex items-center gap-2 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
+                    >
+                      <Trash2 size={14} />
+                      Remove account
+                    </button>
+                  </div>
                 </div>
+
+                {accountTests[index] && !accountTests[index].pending && (
+                  <div
+                    className={`mt-3 rounded-xl p-3 text-xs ${
+                      accountTests[index].ok
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-red-50 text-red-700"
+                    }`}
+                  >
+                    {accountTests[index].detail}
+                  </div>
+                )}
               </div>
             ))}
           </div>
