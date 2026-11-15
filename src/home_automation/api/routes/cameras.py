@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from home_automation.api.dependencies import (
     get_camera_preset_service,
@@ -26,12 +26,13 @@ from pydantic import BaseModel, Field
 
 from home_automation.api.dependencies import (
     get_backblaze_credentials_service,
-)
-from home_automation.config.backblaze_credentials import (
-    BackblazeCredentials,
+    get_cloud_rotation_service,
 )
 from home_automation.services.backblaze_credentials_service import (
     BackblazeCredentialsService,
+)
+from home_automation.services.cloud_rotation_service import (
+    CloudRotationService,
 )
 
 router = APIRouter(
@@ -60,14 +61,27 @@ LiveViewDependency = Annotated[
     Depends(get_live_view_service),
 ]
 
-class BackblazeCredentialsRequest(BaseModel):
+class BackblazeAccountRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
     key_id: str = Field(min_length=1)
-    application_key: str = Field(min_length=1)
+    # Empty keeps the key already stored for an account of this name.
+    application_key: str = ""
+    bucket: str = Field(min_length=1)
+    enabled: bool = True
+
+
+class BackblazeAccountsRequest(BaseModel):
+    accounts: list[BackblazeAccountRequest]
 
 
 BackblazeCredentialsDependency = Annotated[
     BackblazeCredentialsService,
     Depends(get_backblaze_credentials_service),
+]
+
+CloudRotationDependency = Annotated[
+    CloudRotationService,
+    Depends(get_cloud_rotation_service),
 ]
 
 @router.get("/settings")
@@ -136,29 +150,34 @@ def stop_recording(
 ) -> dict:
     return recorder.stop()
 
-@router.get(
-    "/backblaze/credentials"
-)
-def get_backblaze_credentials(
+@router.get("/backblaze/accounts")
+def get_backblaze_accounts(
     service: BackblazeCredentialsDependency,
 ) -> dict:
+    """Account list without the application keys."""
+
     return service.status()
 
 
-@router.put(
-    "/backblaze/credentials"
-)
-def save_backblaze_credentials(
-    request: BackblazeCredentialsRequest,
+@router.put("/backblaze/accounts")
+def save_backblaze_accounts(
+    request: BackblazeAccountsRequest,
     service: BackblazeCredentialsDependency,
 ) -> dict:
-    service.save(
-        BackblazeCredentials(
-            key_id=request.key_id.strip(),
-            application_key=(
-                request.application_key.strip()
-            ),
+    try:
+        service.save_from_request(
+            [account.model_dump() for account in request.accounts]
         )
-    )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
     return service.status()
+
+
+@router.get("/backblaze/rotation")
+def backblaze_rotation(
+    rotation: CloudRotationDependency,
+) -> dict:
+    """Which account each recent day went to, and today's."""
+
+    return rotation.status()

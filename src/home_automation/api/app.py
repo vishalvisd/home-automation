@@ -16,6 +16,7 @@ from home_automation.config.application import (
     AUTOMATION_TEMPLATE_DIRECTORY,
     CAMERA_PRESET_STATE_FILE,
     CAMERA_SETTINGS_FILE,
+    CLOUD_ROTATION_STATE_FILE,
     FRONTEND_DIST_DIRECTORY,
     GO2RTC_CONFIG_FILE,
     GO2RTC_SERVICE_NAME,
@@ -56,6 +57,9 @@ from home_automation.services.backblaze_credentials_service import (
 
 from home_automation.services.backblaze_b2_storage_provider import (
     BackblazeB2StorageProvider,
+)
+from home_automation.services.cloud_rotation_service import (
+    CloudRotationService,
 )
 
 @asynccontextmanager
@@ -98,9 +102,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
 
+    # Old installs kept one key pair and the bucket name in cameras.json.
+    # Fold them into a one-account list once.
+    backblaze_credentials_service.migrate_single_key(
+        _legacy_bucket_name(CAMERA_SETTINGS_FILE)
+    )
+
+    cloud_rotation_service = CloudRotationService(
+        backblaze_credentials_service,
+        CLOUD_ROTATION_STATE_FILE,
+    )
+
     backblaze_b2_storage_provider = BackblazeB2StorageProvider(
         camera_settings_service,
-        backblaze_credentials_service,
+        cloud_rotation_service,
     )
 
     camera_upload_service = CameraUploadService(
@@ -134,6 +149,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.camera_recorder_service = camera_recorder_service
     app.state.camera_preset_service = camera_preset_service
     app.state.backblaze_credentials_service = backblaze_credentials_service
+    app.state.cloud_rotation_service = cloud_rotation_service
     app.state.live_view_service = live_view_service
 
     watering_scheduler_service.start()
@@ -154,6 +170,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         watering_scheduler_service.stop()
         watering_service.shutdown()
         relay_manager.close()
+
+
+def _legacy_bucket_name(settings_file) -> str:
+    """b2_bucket from a cameras.json written before account rotation."""
+
+    try:
+        import json
+
+        raw = json.loads(settings_file.read_text(encoding="utf-8"))
+        return str(raw.get("b2_bucket", "") or "")
+    except Exception:
+        return ""
 
 
 def create_app() -> FastAPI:

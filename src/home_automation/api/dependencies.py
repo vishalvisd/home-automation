@@ -25,6 +25,9 @@ from home_automation.services.backblaze_credentials_service import (
     BackblazeCredentialsService,
 )
 from home_automation.services.live_view_service import LiveViewService
+from home_automation.services.cloud_rotation_service import (
+    CloudRotationService,
+)
 
 
 def get_relay_manager(request: Request) -> RelayManager:
@@ -78,3 +81,9 @@ def get_live_view_service(
     request: Request,
 ) -> LiveViewService:
     return request.app.state.live_view_service
+
+
+def get_cloud_rotation_service(
+    request: Request,
+) -> CloudRotationService:
+    return request.app.state.cloud_rotation_service

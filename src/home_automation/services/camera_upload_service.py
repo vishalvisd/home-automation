@@ -137,9 +137,15 @@ class CameraUploadService:
             )
             return
 
+        recorded_at = datetime.fromtimestamp(
+            file_path.stat().st_mtime,
+            tz=LOCAL_TIME_ZONE,
+        )
+
         remote_key = self._build_remote_key(
             camera,
-            file_path,
+            recorded_at,
+            file_path.suffix,
         )
 
         LOGGER.info(
@@ -150,15 +156,17 @@ class CameraUploadService:
         )
 
         try:
-            self._storage_provider.upload(
+            destination = self._storage_provider.upload(
                 file_path,
                 remote_key,
+                recorded_at,
             )
 
             LOGGER.info(
-                "Camera upload successful [%s]: %s",
+                "Camera upload successful [%s]: %s (%s)",
                 camera.name,
                 remote_key,
+                destination,
             )
 
         except Exception:
@@ -188,20 +196,17 @@ class CameraUploadService:
     @staticmethod
     def _build_remote_key(
         camera: CameraConfig,
-        file_path: Path,
+        timestamp: datetime,
+        suffix: str,
     ) -> str:
         """
         cam1/YYYY/MM/DD/HH/cam_1_YYYY_MM_DD_HH_MM_SS.<ext>
 
-        The extension follows the local file: .ts for ESP32-CAM
+        The timestamp is the clip's close time in Asia/Kolkata. The
+        extension follows the local file: .ts for ESP32-CAM
         recordings, .mp4 for RTSP cameras. Another project downloads
         these objects, so do not change the layout casually.
         """
-
-        timestamp = datetime.fromtimestamp(
-            file_path.stat().st_mtime,
-            tz=LOCAL_TIME_ZONE,
-        )
 
         camera_number = camera.key.removeprefix("cam")
 
@@ -209,5 +214,5 @@ class CameraUploadService:
             f"{camera.key}/"
             f"{timestamp:%Y/%m/%d/%H}/"
             f"cam_{camera_number}_{timestamp:%Y_%m_%d_%H_%M_%S}"
-            f"{file_path.suffix}"
+            f"{suffix}"
         )

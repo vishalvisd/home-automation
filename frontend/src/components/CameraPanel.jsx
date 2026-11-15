@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 
 import {
-  getBackblazeCredentialsStatus,
+  getBackblazeAccounts,
+  getBackblazeRotation,
   getCameraSettings,
   getPresetStatus,
   getRecordingStatus,
-  saveBackblazeCredentials,
+  saveBackblazeAccounts,
   saveCameraSettings,
   startRecording,
   stopRecording,
@@ -52,12 +53,11 @@ export default function CameraPanel() {
   const [pending, setPending] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
-  const [credentialsStatus, setCredentialsStatus] = useState(null);
-  const [backblazeKeyId, setBackblazeKeyId] = useState("");
-  const [
-    backblazeApplicationKey,
-    setBackblazeApplicationKey,
-  ] = useState("");
+  // Backblaze accounts as edited in the table. application_key is
+  // always empty when loaded from the Pi (it never returns secrets);
+  // typing one replaces the stored key on save.
+  const [accounts, setAccounts] = useState(null);
+  const [rotation, setRotation] = useState(null);
 
   async function loadSettings() {
     try {
@@ -67,11 +67,27 @@ export default function CameraPanel() {
     }
   }
 
-  async function loadCredentialsStatus() {
+  function accountsFromStatus(status) {
+    return status.accounts.map((account) => ({
+      ...account,
+      application_key: "",
+      stored: true,
+    }));
+  }
+
+  async function loadAccounts() {
     try {
-      setCredentialsStatus(
-        await getBackblazeCredentialsStatus(),
+      setAccounts(
+        accountsFromStatus(await getBackblazeAccounts()),
       );
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function loadRotation() {
+    try {
+      setRotation(await getBackblazeRotation());
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -120,33 +136,63 @@ export default function CameraPanel() {
     }
   }
 
-  async function saveCredentials() {
-    setPending("credentials");
+  async function saveAccounts() {
+    setPending("accounts");
     setMessage(null);
     setError(null);
 
     try {
-      const result =
-        await saveBackblazeCredentials(
-          backblazeKeyId,
-          backblazeApplicationKey,
-        );
-
-      setCredentialsStatus(result);
-
-      // Never retain credentials in browser state
-      // after they have been saved.
-      setBackblazeKeyId("");
-      setBackblazeApplicationKey("");
-
-      setMessage(
-        "Backblaze credentials saved.",
+      const result = await saveBackblazeAccounts(
+        accounts.map((account) => ({
+          name: account.name,
+          key_id: account.key_id,
+          application_key: account.application_key,
+          bucket: account.bucket,
+          enabled: account.enabled,
+        })),
       );
+
+      // Never retain application keys in browser state after
+      // they have been saved.
+      setAccounts(accountsFromStatus(result));
+      await loadRotation();
+
+      setMessage("Backblaze accounts saved.");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setPending(null);
     }
+  }
+
+  function updateAccount(index, key, value) {
+    setAccounts((current) =>
+      current.map((account, accountIndex) =>
+        accountIndex === index
+          ? { ...account, [key]: value }
+          : account,
+      ),
+    );
+  }
+
+  function addAccount() {
+    setAccounts((current) => [
+      ...(current ?? []),
+      {
+        name: "",
+        key_id: "",
+        application_key: "",
+        bucket: "",
+        enabled: true,
+        stored: false,
+      },
+    ]);
+  }
+
+  function removeAccount(index) {
+    setAccounts((current) =>
+      current.filter((_account, accountIndex) => accountIndex !== index),
+    );
   }
 
   async function runCommand(command) {
@@ -232,7 +278,8 @@ export default function CameraPanel() {
 
   useEffect(() => {
     loadSettings();
-    loadCredentialsStatus();
+    loadAccounts();
+    loadRotation();
     refreshStatus();
     refreshPresetStatus();
 
@@ -495,36 +542,27 @@ export default function CameraPanel() {
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
-              Upload completed CCTV segments to
-              Backblaze B2. Each segment is uploaded
-              once and then deleted, whether or not
-              the upload succeeded.
+              Completed segments are uploaded once and then
+              deleted, whether or not the upload succeeded. Each
+              calendar day goes to one account; the next day takes
+              the next enabled account in the list.
             </p>
           </div>
 
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              credentialsStatus?.configured
+              accounts?.some((account) => account.stored && account.enabled)
                 ? "bg-emerald-100 text-emerald-700"
                 : "bg-amber-100 text-amber-700"
             }`}
           >
-            {credentialsStatus?.configured
-              ? "Credentials configured"
-              : "Credentials not configured"}
+            {accounts?.some((account) => account.stored && account.enabled)
+              ? `${accounts.filter((account) => account.enabled).length} account(s) enabled`
+              : "No account configured"}
           </span>
         </div>
 
-        {credentialsStatus?.configured && (
-          <p className="mt-3 text-xs text-slate-500">
-            Key ID ending in{" "}
-            <span className="font-mono font-semibold">
-              {credentialsStatus.key_id_suffix}
-            </span>
-          </p>
-        )}
-
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
           <label className="rounded-2xl bg-slate-50 p-4">
             <span className="text-sm font-medium text-slate-700">
               Upload enabled
@@ -551,103 +589,166 @@ export default function CameraPanel() {
             </div>
           </label>
 
-          <TextField
-            label="Bucket"
-            value={settings.b2_bucket}
-            mono
-            placeholder="Bucket name from the Backblaze console"
-            onChange={(value) =>
-              updateSetting(
-                "b2_bucket",
-                value,
-              )
-            }
-          />
-
           <NumberSetting
-            label="Upload rate"
-            value={settings.b2_upload_rate_kbps}
-            suffix="KiB/s"
+            label="Upload speed limit, shared by all uploads"
+            value={settings.b2_upload_rate_kb_s}
+            suffix="KB/s"
             min={1}
             onChange={(value) =>
               updateSetting(
-                "b2_upload_rate_kbps",
+                "b2_upload_rate_kb_s",
                 value,
               )
             }
           />
         </div>
 
+        {rotation && (
+          <div className="mt-4 rounded-xl bg-slate-50 p-4 text-xs text-slate-600">
+            <span className="font-semibold text-slate-800">
+              Today ({rotation.today}):
+            </span>{" "}
+            {rotation.today_account
+              ? `uploading to "${rotation.today_account}"`
+              : "no clip uploaded yet today; the next one picks the account"}
+            {Object.keys(rotation.days).length > 0 && (
+              <span className="ml-2 text-slate-500">
+                Recent days:{" "}
+                {Object.entries(rotation.days)
+                  .slice(-7)
+                  .map(([day, name]) => `${day.slice(5)} → ${name}`)
+                  .join(", ")}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="mt-5 border-t border-slate-200 pt-5">
-          <div className="text-sm font-semibold text-slate-900">
-            Credentials
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">
+                Accounts
+              </div>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Keys are stored only on this Raspberry Pi. Leave
+                the application key empty to keep the one already
+                stored.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={addAccount}
+              disabled={pending !== null}
+              className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:opacity-50"
+            >
+              <Plus size={17} />
+              Add Account
+            </button>
           </div>
 
-          <p className="mt-1 text-xs text-slate-500">
-            Credentials are stored only on this
-            Raspberry Pi and are not committed to Git.
-          </p>
+          <div className="mt-4 space-y-4">
+            {(accounts ?? []).map((account, index) => (
+              <div
+                key={index}
+                className="rounded-2xl bg-slate-50 p-4"
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  <TextField
+                    label="Name"
+                    value={account.name}
+                    placeholder="eu-06"
+                    onChange={(value) =>
+                      updateAccount(index, "name", value)
+                    }
+                  />
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">
-                Application Key ID
-              </span>
+                  <TextField
+                    label="Bucket"
+                    value={account.bucket}
+                    mono
+                    placeholder="visd-cctv-eu-06"
+                    onChange={(value) =>
+                      updateAccount(index, "bucket", value)
+                    }
+                  />
 
-              <input
-                type="password"
-                value={backblazeKeyId}
-                autoComplete="off"
-                onChange={(event) =>
-                  setBackblazeKeyId(
-                    event.target.value,
-                  )
-                }
-                placeholder={
-                  credentialsStatus?.configured
-                    ? "Enter only to replace"
-                    : "Enter Key ID"
-                }
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm"
-              />
-            </label>
+                  <TextField
+                    label="Application Key ID"
+                    value={account.key_id}
+                    mono
+                    placeholder="003..."
+                    onChange={(value) =>
+                      updateAccount(index, "key_id", value)
+                    }
+                  />
 
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">
-                Application Key
-              </span>
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-700">
+                      Application Key
+                    </span>
 
-              <input
-                type="password"
-                value={backblazeApplicationKey}
-                autoComplete="new-password"
-                onChange={(event) =>
-                  setBackblazeApplicationKey(
-                    event.target.value,
-                  )
-                }
-                placeholder={
-                  credentialsStatus?.configured
-                    ? "Enter only to replace"
-                    : "Enter Application Key"
-                }
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm"
-              />
-            </label>
+                    <input
+                      type="password"
+                      value={account.application_key}
+                      autoComplete="new-password"
+                      onChange={(event) =>
+                        updateAccount(
+                          index,
+                          "application_key",
+                          event.target.value,
+                        )
+                      }
+                      placeholder={
+                        account.stored
+                          ? "Stored on the Pi; enter only to replace"
+                          : "Enter Application Key"
+                      }
+                      className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-sm"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={account.enabled}
+                      onChange={(event) =>
+                        updateAccount(
+                          index,
+                          "enabled",
+                          event.target.checked,
+                        )
+                      }
+                      className="h-4 w-4"
+                    />
+                    Enabled (takes part in the rotation)
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => removeAccount(index)}
+                    disabled={pending !== null}
+                    className="flex items-center gap-2 rounded-xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                    Remove account
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
 
           <button
             type="button"
-            onClick={saveCredentials}
-            disabled={
-              pending !== null ||
-              !backblazeKeyId.trim() ||
-              !backblazeApplicationKey.trim()
-            }
+            onClick={saveAccounts}
+            disabled={pending !== null || accounts === null}
             className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
           >
             <Save size={17} />
-            Save Credentials
+            Save Accounts
           </button>
         </div>
       </div>

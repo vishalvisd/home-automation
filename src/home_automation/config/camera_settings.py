@@ -95,12 +95,16 @@ class CameraSettings(BaseModel):
     # waiting segment is deleted without being uploaded.
     pending_upload_limit: int = Field(default=3, ge=1)
 
-    # Backblaze B2 upload. The bucket name is set from the UI and
-    # stored only in runtime/cameras.json on the Pi.
+    # Backblaze B2 upload. Accounts and buckets live in
+    # runtime/backblaze_credentials.json; uploads rotate between the
+    # enabled accounts, one account per calendar day.
     b2_upload_enabled: bool = False
-    b2_bucket: str = ""
-    b2_upload_rate_kbps: int = Field(
-        default=300,
+
+    # Upload speed limit in kilobytes per second, shared by every
+    # upload in progress. (The old b2_upload_rate_kbps applied per
+    # upload, so three cameras used three times the number.)
+    b2_upload_rate_kb_s: int = Field(
+        default=750,
         ge=1,
     )
 

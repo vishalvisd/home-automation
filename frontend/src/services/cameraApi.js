@@ -84,31 +84,34 @@ export async function stopRecording() {
   return handleResponse(response);
 }
 
-export async function getBackblazeCredentialsStatus() {
+export async function getBackblazeAccounts() {
   const response = await fetch(
-    "/api/cameras/backblaze/credentials",
+    "/api/cameras/backblaze/accounts",
   );
 
   return handleResponse(response);
 }
 
 
-export async function saveBackblazeCredentials(
-  keyId,
-  applicationKey,
-) {
+export async function saveBackblazeAccounts(accounts) {
   const response = await fetch(
-    "/api/cameras/backblaze/credentials",
+    "/api/cameras/backblaze/accounts",
     {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        key_id: keyId,
-        application_key: applicationKey,
-      }),
+      body: JSON.stringify({ accounts }),
     },
+  );
+
+  return handleResponse(response);
+}
+
+
+export async function getBackblazeRotation() {
+  const response = await fetch(
+    "/api/cameras/backblaze/rotation",
   );
 
   return handleResponse(response);

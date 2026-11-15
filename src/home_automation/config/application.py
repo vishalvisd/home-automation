@@ -31,6 +31,9 @@ CAMERA_PRESET_STATE_FILE = (
 BACKBLAZE_CREDENTIALS_FILE = (
     RUNTIME_DIRECTORY / "backblaze_credentials.json"
 )
+CLOUD_ROTATION_STATE_FILE = (
+    RUNTIME_DIRECTORY / "cloud_rotation_state.json"
+)
 # Live view in the browser is served by go2rtc, a separate systemd
 # service on the Pi (scripts/install_go2rtc.sh). The backend writes its
 # config file from the camera list and restarts it when that changes.

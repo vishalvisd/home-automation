@@ -58,6 +58,10 @@ All application scheduling lives in Python threads, not cron or systemd timers.
     software encode, MPEG-TS `.ts` segments. Day/night presets apply.
   - `rtsp`: commercial IP cameras, ffmpeg with `-c:v copy` (never
     re-encode video on the Pi), audio converted to AAC, MP4 segments.
+- Uploads rotate between several Backblaze accounts, one account per
+  calendar day (`CloudRotationService`, state in
+  `runtime/cloud_rotation_state.json`). A past day's account never
+  changes. The downloader must look in every account for a day.
 - Keep the B2 object layout `camN/YYYY/MM/DD/HH/cam_N_YYYY_MM_DD_HH_MM_SS.<ext>`.
   Another project downloads these objects.
 - Do not auto-restart the shared camera power relay because one camera

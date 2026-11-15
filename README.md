@@ -239,6 +239,7 @@ runtime/
 ├── cameras.json
 ├── camera_preset_state.json
 ├── backblaze_credentials.json
+├── cloud_rotation_state.json
 ├── go2rtc.yaml
 └── automations/
     ├── restart_router.py
@@ -657,9 +658,7 @@ per-camera host/path/control port/enabled flag;
 
 Backblaze upload enabled;
 
-Backblaze bucket;
-
-Backblaze upload rate limit.
+Backblaze upload speed limit, shared by all uploads.
 
 Current defaults include:
 
@@ -668,8 +667,7 @@ frame_rate             = 15      (ESP32-CAM only)
 video_bitrate_kbps     = 1000    (ESP32-CAM only)
 recording_directory    = /dev/shm/home-automation/cameras
 pending_upload_limit   = 3
-b2_bucket              = (empty; set from the UI)
-b2_upload_rate_kbps    = 300
+b2_upload_rate_kb_s    = 750     (kilobytes per second, one shared budget)
 
 The segment duration remains configurable from the UI. 180 seconds matches the old CCTV implementation's three-minute segment length.
 
@@ -872,19 +870,44 @@ RAM, so nothing may accumulate.
 
 Upload rate limit
 
-The B2 progress listener throttles the upload approximately to the configured b2_upload_rate_kbps value. This prevents CCTV uploads from consuming all available upstream bandwidth.
+All uploads in progress share one budget of b2_upload_rate_kb_s kilobytes
+per second (a token bucket in SharedUploadRateLimiter). Three cameras
+uploading at the same time therefore use the configured number in total,
+not three times it. This keeps CCTV uploads from taking all upstream
+bandwidth.
 
-Credentials
+Accounts and day rotation
 
-Credentials are stored at:
+Several Backblaze accounts are kept, each with its own bucket, so that
+most of the stored footage stays inside each account's free allowance.
+They are stored as a list at:
 
-runtime/backblaze_credentials.json
+runtime/backblaze_credentials.json      (mode 0600)
 
-Permissions are forced to:
+{"accounts": [{"name": "eu", "key_id": "...", "application_key": "...",
+               "bucket": "visd-cctv-eu", "enabled": true}, ...]}
 
-0600
+Every calendar day in Asia/Kolkata goes to one account. CloudRotationService
+keeps a small map of date -> account name in runtime/cloud_rotation_state.json.
+A clip is routed by the date in its own object path (its close time), so a
+clip that closes before midnight and uploads after it still goes to its own
+day's account. A new date takes the next enabled account in the list after
+the account of the latest known date, wrapping round. Adding an account adds
+a stop on the cycle; disabling or removing one is skipped; past days never
+move. Each bucket carries a lifecycle rule (currently 3+1 days) so an
+account holds about one day of clips when its turn comes round again.
 
-The API/UI only expose whether credentials are configured plus the suffix of the key ID. The application key is never returned by the status endpoint.
+The old single-key file ({"key_id", "application_key"}) plus the b2_bucket
+setting are migrated into a one-account list on the first start after the
+upgrade.
+
+GET /api/cameras/backblaze/accounts returns the list without application
+keys. PUT saves it; a row with an empty application key keeps the key
+already stored under that name. GET /api/cameras/backblaze/rotation shows
+today's account and the recent map.
+
+The downloader currently knows one account only; browsing days that went
+to other accounts is the next change.
 
 B2 object naming
 
@@ -938,8 +961,9 @@ GET  /api/cameras/preset/status
 GET  /api/cameras/recording/status
 POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
-GET  /api/cameras/backblaze/credentials
-PUT  /api/cameras/backblaze/credentials
+GET  /api/cameras/backblaze/accounts
+PUT  /api/cameras/backblaze/accounts
+GET  /api/cameras/backblaze/rotation
 GET  /api/cameras/live
 POST /api/cameras/live/sync
 
@@ -975,7 +999,7 @@ per-camera configuration/status;
 
 automatic Day/Night schedule configuration and locally recorded applied-preset status;
 
-Backblaze settings and credential entry;
+Backblaze account list, rotation status and upload settings;
 
 recording start/stop controls.
 
@@ -1046,8 +1070,9 @@ GET  /api/cameras/preset/status
 GET  /api/cameras/recording/status
 POST /api/cameras/recording/start
 POST /api/cameras/recording/stop
-GET  /api/cameras/backblaze/credentials
-PUT  /api/cameras/backblaze/credentials
+GET  /api/cameras/backblaze/accounts
+PUT  /api/cameras/backblaze/accounts
+GET  /api/cameras/backblaze/rotation
 GET  /api/cameras/live
 POST /api/cameras/live/sync
 
