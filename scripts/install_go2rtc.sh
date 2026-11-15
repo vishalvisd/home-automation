@@ -79,6 +79,7 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
     cat > "${CONFIG_FILE}" <<EOF
 api:
   listen: ":1984"
+  origin: "*"
 rtsp:
   listen: ""
 streams:

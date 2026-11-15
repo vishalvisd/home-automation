@@ -121,6 +121,11 @@ class LiveViewService:
             "# settings are saved, and go2rtc is restarted.",
             "api:",
             f'  listen: ":{self._port}"',
+            # The Pi UI is served on port 8000 and the player connects
+            # to go2rtc on this port, so the browser treats it as a
+            # cross-origin WebSocket. go2rtc refuses those unless told
+            # to allow any origin.
+            '  origin: "*"',
             "rtsp:",
             # The RTSP server is not needed; the Pi records with ffmpeg.
             '  listen: ""',
