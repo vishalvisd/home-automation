@@ -9,7 +9,18 @@ const DURATIONS = [
   [180, "3 hours"], [360, "6 hours"], [720, "12 hours"], [1440, "24 hours"],
 ];
 
+const SOURCE_STORAGE_KEY = "browseSource";
+
+function loadSource() {
+  try {
+    return localStorage.getItem(SOURCE_STORAGE_KEY) === "disk" ? "disk" : "cloud";
+  } catch {
+    return "cloud";
+  }
+}
+
 export default function BrowsePanel({ system, onJobStarted }) {
+  const [source, setSource] = useState(() => loadSource());
   const [cameras, setCameras] = useState([]);
   const [camera, setCamera] = useState("");
   const [days, setDays] = useState([]);
@@ -24,12 +35,26 @@ export default function BrowsePanel({ system, onJobStarted }) {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
 
+  function chooseSource(value) {
+    setSource(value);
+    try {
+      localStorage.setItem(SOURCE_STORAGE_KEY, value);
+    } catch {
+      // not remembered, that is all
+    }
+  }
+
   async function loadCameras() {
     setError(null);
+    setCameras([]);
+    setDays([]);
+    setDay("");
+    setData(null);
+    setPreview(null);
     try {
-      const list = await api.cameras();
+      const list = await api.cameras(source);
       setCameras(list);
-      if (!camera && list.length) setCamera(list[0]);
+      setCamera(list.includes(camera) ? camera : list[0] ?? "");
     } catch (e) {
       setError(e.message);
     }
@@ -38,27 +63,28 @@ export default function BrowsePanel({ system, onJobStarted }) {
   useEffect(() => {
     if (system?.pi_configured) loadCameras();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [system?.pi_configured]);
+  }, [system?.pi_configured, source]);
 
   useEffect(() => {
     if (!camera) return;
     setDays([]);
     setDay("");
     setData(null);
-    api.days(camera)
+    api.days(camera, source)
       .then((list) => {
         setDays(list);
         if (list.length) setDay(list[0]);
       })
       .catch((e) => setError(e.message));
-  }, [camera]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera, source]);
 
   useEffect(() => {
     if (!camera || !day) return;
     setLoading(true);
     setHourFilter(null);
     setPreview(null);
-    api.clips(camera, day)
+    api.clips(camera, day, source)
       .then((result) => {
         setData(result);
         if (result.clips.length && !startTime) setStartTime(timeOnly(result.clips[0].start_time));
@@ -66,7 +92,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, day]);
+  }, [camera, day, source]);
 
   async function startDownload() {
     setPending(true);
@@ -77,6 +103,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
         camera,
         start: `${day}T${startTime.length === 5 ? `${startTime}:00` : startTime}`,
         duration_seconds: Number(minutes) * 60,
+        source,
       });
       setMessage("Download job started. See the Jobs tab.");
       onJobStarted?.();
@@ -103,16 +130,37 @@ export default function BrowsePanel({ system, onJobStarted }) {
     <div className="space-y-4">
       <Card
         title="Browse clips"
-        subtitle="Pick a camera and a day. Each clip is one 3-minute recording as uploaded by the Pi. Every Backblaze account the Pi knows is searched."
+        subtitle={
+          source === "disk"
+            ? "Full-quality main-stream clips on the Pi's USB disk. Browsing wakes the disk; it parks again a few minutes after the last request."
+            : "Small sub-stream clips in Backblaze. Every account the Pi knows is searched."
+        }
         right={<Button icon={RefreshCw} variant="secondary" onClick={loadCameras}>Refresh</Button>}
       >
+        <div className="mt-4 inline-flex rounded-xl border border-slate-300 bg-white p-1 text-sm font-semibold">
+          {[
+            ["cloud", "Cloud (Backblaze)"],
+            ["disk", "Pi disk"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => chooseSource(value)}
+              className={`rounded-lg px-3 py-1.5 ${
+                source === value ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           <Field label="Camera">
             <select className={inputClass} value={camera} onChange={(e) => setCamera(e.target.value)}>
               {cameras.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           </Field>
-          <Field label="Day" hint={days.length ? `${days.length} day(s) across all accounts` : "No days found"}>
+          <Field label="Day" hint={days.length ? `${days.length} day(s) ${source === "disk" ? "on the disk" : "across all accounts"}` : "No days found"}>
             <select className={inputClass} value={day} onChange={(e) => setDay(e.target.value)}>
               {days.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
@@ -122,7 +170,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
               <>
                 <div className="text-2xl font-semibold text-slate-900">{data.count} clips</div>
                 <div>{formatBytes(data.bytes)} on this day</div>
-                {data.clips.length > 0 && (
+                {data.clips.length > 0 && source === "cloud" && (
                   <div className="mt-1 text-xs text-slate-500">
                     Account: {[...new Set(data.clips.map((clip) => clip.account || "?"))].join(", ")}
                   </div>
@@ -146,7 +194,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card title="Download a window" subtitle="Clips are joined into one file in the output folder." className="lg:col-span-2">
+        <Card title="Download a window" subtitle={`Clips from the ${source === "disk" ? "Pi disk" : "cloud"} are joined into one file in the output folder.`} className="lg:col-span-2">
           <div className="mt-5 space-y-4">
             <Field label="Start time" hint={`${camera || "camera"} on ${day || "day"}. Click a clip to use its start.`}>
               <input type="time" step="1" className={inputClass} value={startTime} onChange={(e) => setStartTime(e.target.value)} />
@@ -171,7 +219,7 @@ export default function BrowsePanel({ system, onJobStarted }) {
                 <span className="font-mono">{preview.filename}</span>
                 <button type="button" onClick={() => setPreview(null)} className="flex items-center gap-1"><X size={14} /> close</button>
               </div>
-              <video key={preview.key} controls autoPlay className="mt-2 w-full rounded-xl" src={api.previewUrl(preview.key, preview.account)} />
+              <video key={`${source}:${preview.key}`} controls autoPlay className="mt-2 w-full rounded-xl" src={api.previewUrl(preview.key, preview.account, source)} />
               <p className="mt-2 text-xs text-slate-400">The clip is downloaded to a local cache first, so the first play of a clip takes a few seconds.</p>
             </div>
           )}

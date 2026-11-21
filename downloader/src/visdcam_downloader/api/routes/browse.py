@@ -3,14 +3,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from visdcam_downloader.api.dependencies import get_b2_client
+from visdcam_downloader.api.dependencies import get_source_client
 from visdcam_downloader.api.errors import http_error
-from visdcam_downloader.services.b2_client import B2Client
 
 
 router = APIRouter(prefix="/api/browse", tags=["browse"])
 
-B2Dependency = Annotated[B2Client, Depends(get_b2_client)]
+# Every browse call takes ?source=cloud|disk and talks to that source.
+B2Dependency = Annotated[object, Depends(get_source_client)]
 
 
 @router.get("/cameras")

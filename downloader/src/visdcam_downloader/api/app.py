@@ -12,6 +12,7 @@ from visdcam_downloader.config import (
     SETTINGS_FILE,
     ensure_runtime_directories,
 )
+from visdcam_downloader.services.archive_client import ArchiveClient
 from visdcam_downloader.services.b2_client import B2Client
 from visdcam_downloader.services.job_service import JobService
 from visdcam_downloader.services.settings_service import SettingsService
@@ -27,7 +28,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     settings_service = SettingsService(SETTINGS_FILE)
     b2_client = B2Client(settings_service)
-    workflows = Workflows(settings_service, b2_client)
+    archive_client = ArchiveClient(settings_service)
+    workflows = Workflows(settings_service, b2_client, archive_client)
 
     job_service = JobService(JOBS_FILE)
     job_service.register("download", workflows.download_job)
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.settings_service = settings_service
     app.state.b2_client = b2_client
+    app.state.archive_client = archive_client
     app.state.workflows = workflows
     app.state.job_service = job_service
 

@@ -7,8 +7,21 @@ It runs on your Mac or Windows computer and opens in the browser. It can:
 - download a time window and join the clips into one video, with audio;
 - make time-lapse videos from any downloaded file, using the hardware encoder.
 
-The Pi rotates its uploads between several Backblaze accounts, one account
-per calendar day, and is the only place the account list lives. This app
+Clips come from one of two sources, chosen with the switch at the top of
+the Browse tab and remembered by the browser:
+
+- **Cloud (Backblaze)**: the small sub-stream clips the Pi uploads. The Pi
+  rotates its uploads between several Backblaze accounts, one account per
+  calendar day, and is the only place the account list lives.
+- **Pi disk**: the full-quality main-stream clips on the USB disk attached
+  to the Pi, read through the Pi's API (`/api/cameras/archive/...`).
+  Browsing wakes the disk; the Pi parks it again a few minutes after the
+  last request. Downloads come over the home network.
+
+A download job takes all its clips from the source chosen when it was
+started, so one joined file is never a mix of the two qualities.
+
+About the cloud source: the Pi This app
 fetches that list from the Pi (`/api/cameras/backblaze/accounts/export`) on
 every browse or download, asks every account in parallel, and merges the
 results. It keeps no copy of the keys.

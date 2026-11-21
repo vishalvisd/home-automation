@@ -17,6 +17,8 @@ class DownloadRequest(BaseModel):
     camera: str = Field(pattern=r"^cam\d+$")
     start: str
     duration_seconds: int = Field(ge=60, le=24 * 3600)
+    # "cloud" (Backblaze) or "disk" (the Pi's archive disk)
+    source: str = Field(default="cloud", pattern=r"^(cloud|disk)$")
 
 
 class TimelapseRequest(BaseModel):
@@ -39,7 +41,8 @@ def start_download(request: DownloadRequest, jobs: JobsDependency) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid start time") from error
 
     minutes = round(request.duration_seconds / 60)
-    title = f"{request.camera} {start:%Y-%m-%d %H:%M} for {minutes} min"
+    where = "Pi disk" if request.source == "disk" else "cloud"
+    title = f"{request.camera} {start:%Y-%m-%d %H:%M} for {minutes} min ({where})"
 
     return jobs.submit("download", title, request.model_dump()).to_dict()
 

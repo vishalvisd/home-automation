@@ -8,13 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
 from visdcam_downloader.api.dependencies import (
-    get_b2_client,
     get_settings_service,
+    get_source_client,
     get_workflows,
 )
 from visdcam_downloader.api.errors import http_error
 from visdcam_downloader.config import PREVIEW_CACHE_DIRECTORY
-from visdcam_downloader.services.b2_client import B2Client
 from visdcam_downloader.services.clips import parse_clip
 from visdcam_downloader.services.settings_service import SettingsService
 from visdcam_downloader.services.timelapse import remux_arguments
@@ -23,7 +22,7 @@ from visdcam_downloader.services.workflows import Workflows
 
 router = APIRouter(prefix="/api/preview", tags=["preview"])
 
-B2Dependency = Annotated[B2Client, Depends(get_b2_client)]
+B2Dependency = Annotated[object, Depends(get_source_client)]
 SettingsDependency = Annotated[SettingsService, Depends(get_settings_service)]
 WorkflowsDependency = Annotated[Workflows, Depends(get_workflows)]
 
@@ -50,6 +49,7 @@ def preview_clip(
     workflows: WorkflowsDependency,
     key: str = Query(),
     account: str = Query(""),
+    source: str = Query("cloud", pattern=r"^(cloud|disk)$"),
 ) -> FileResponse:
     """Download one clip into the local cache (converting .ts to MP4) and serve it."""
 
@@ -63,7 +63,8 @@ def preview_clip(
     if clip is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a clip key")
 
-    digest = hashlib.sha1(key.encode()).hexdigest()[:16]
+    # Cloud and disk copies of a clip differ (sub vs main stream).
+    digest = hashlib.sha1(f"{source}:{key}".encode()).hexdigest()[:16]
     cached = PREVIEW_CACHE_DIRECTORY / f"{digest}.mp4"
 
     if not cached.exists():

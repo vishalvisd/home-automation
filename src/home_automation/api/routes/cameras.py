@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from home_automation.api.dependencies import (
     get_archive_service,
@@ -133,6 +134,58 @@ def archive_flush(
     """Run one batch now: mount, copy waiting clips, park."""
 
     return archive.flush(reason="manual")
+
+
+@router.get("/archive/cameras")
+def archive_cameras(archive: ArchiveDependency) -> list[str]:
+    """Cameras with clips on the disk. Wakes the disk."""
+
+    try:
+        return archive.list_cameras()
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@router.get("/archive/days")
+def archive_days(
+    archive: ArchiveDependency,
+    camera: str = Query(pattern=r"^cam\d+$"),
+) -> list[str]:
+    try:
+        return archive.list_days(camera)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@router.get("/archive/clips")
+def archive_clips(
+    archive: ArchiveDependency,
+    camera: str = Query(pattern=r"^cam\d+$"),
+    day: str = Query(pattern=r"^\d{4}-\d{2}-\d{2}$"),
+) -> list[dict]:
+    try:
+        return archive.list_clips(camera, day)
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@router.get("/archive/file")
+def archive_file(
+    archive: ArchiveDependency,
+    key: str = Query(),
+) -> FileResponse:
+    """One clip from the disk, for the downloader."""
+
+    try:
+        path = archive.clip_path(key)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Clip not on the disk")
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    return FileResponse(path, media_type="video/mp4", filename=path.name)
 
 
 @router.get("/live")

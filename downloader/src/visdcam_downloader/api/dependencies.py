@@ -1,4 +1,4 @@
-from fastapi import Request
+from fastapi import Query, Request
 
 from visdcam_downloader.services.b2_client import B2Client
 from visdcam_downloader.services.job_service import JobService
@@ -11,6 +11,18 @@ def get_settings_service(request: Request) -> SettingsService:
 
 
 def get_b2_client(request: Request) -> B2Client:
+    return request.app.state.b2_client
+
+
+def get_source_client(
+    request: Request,
+    source: str = Query("cloud", pattern=r"^(cloud|disk)$"),
+):
+    """The clip source chosen in the UI: Backblaze ("cloud") or the Pi's disk."""
+
+    if source == "disk":
+        return request.app.state.archive_client
+
     return request.app.state.b2_client
 
 

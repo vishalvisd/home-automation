@@ -970,6 +970,11 @@ oldest day, SMART counters.
 
 GET  /api/cameras/archive         status
 POST /api/cameras/archive/flush   run one batch now
+GET  /api/cameras/archive/cameras, /days?camera=, /clips?camera=&day=, /file?key=
+                                  browse and fetch clips on the disk (for the
+                                  downloader). Browsing wakes the disk; it is
+                                  parked again 3 minutes after the last request,
+                                  and a batch never parks it while browsing.
 
 Live view in the browser (go2rtc)
 
@@ -1015,6 +1020,10 @@ POST /api/cameras/backblaze/accounts/test
 GET  /api/cameras/backblaze/rotation
 GET  /api/cameras/archive
 POST /api/cameras/archive/flush
+GET  /api/cameras/archive/cameras
+GET  /api/cameras/archive/days
+GET  /api/cameras/archive/clips
+GET  /api/cameras/archive/file
 GET  /api/cameras/live
 POST /api/cameras/live/sync
 
@@ -1127,6 +1136,10 @@ POST /api/cameras/backblaze/accounts/test
 GET  /api/cameras/backblaze/rotation
 GET  /api/cameras/archive
 POST /api/cameras/archive/flush
+GET  /api/cameras/archive/cameras
+GET  /api/cameras/archive/days
+GET  /api/cameras/archive/clips
+GET  /api/cameras/archive/file
 GET  /api/cameras/live
 POST /api/cameras/live/sync
 

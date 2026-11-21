@@ -40,6 +40,15 @@ SMART_ATTRIBUTES = {
 
 DAY_DIRECTORY_PATTERN = re.compile(r"^\d{4}/\d{2}/\d{2}$")
 
+# A clip's path on the disk, as the downloader asks for it.
+CLIP_KEY_PATTERN = re.compile(
+    r"^cam\d+/\d{4}/\d{2}/\d{2}/\d{2}/cam_\d+_\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}\.(mp4|ts)$"
+)
+
+# After the downloader browsed the disk, keep it awake this long in case
+# more requests follow, then park it.
+BROWSE_IDLE_SECONDS = 180
+
 
 class ArchiveService:
     """
@@ -70,6 +79,9 @@ class ArchiveService:
         self._disk: dict = {}
         self._smart: dict = {}
         self._parked = False
+
+        # Until when the disk must stay mounted for browsing (monotonic).
+        self._browse_until = 0.0
 
         self._thread = Thread(
             target=self._loop,
@@ -148,6 +160,108 @@ class ArchiveService:
         return self.status()
 
     # ------------------------------------------------------------------
+    # Browsing the disk (for the downloader on the Mac)
+    # ------------------------------------------------------------------
+
+    def _browse_root(self) -> Path:
+        """
+        Mount the disk for browsing and keep it awake for a while. The
+        batch and the browsing share the flush lock so they never fight
+        over mounting and parking.
+        """
+
+        settings = self._settings_service.get()
+        archive_root = Path(settings.archive_directory)
+
+        if not settings.archive_enabled:
+            raise RuntimeError("The archive is switched off")
+
+        if not Path(settings.archive_disk_device).exists():
+            raise RuntimeError("Archive disk is not plugged in")
+
+        with self._flush_lock:
+            self._mount(archive_root)
+
+            with self._lock:
+                self._browse_until = monotonic() + BROWSE_IDLE_SECONDS
+                self._parked = False
+
+        return archive_root
+
+    def list_cameras(self) -> list[str]:
+        root = self._browse_root()
+        return sorted(
+            path.name
+            for path in root.glob("cam*")
+            if path.is_dir() and path.name[3:].isdigit()
+        )
+
+    def list_days(self, camera: str) -> list[str]:
+        root = self._browse_root()
+        days = []
+
+        for day_directory in (root / camera).glob("*/*/*"):
+            relative = "/".join(day_directory.parts[-3:])
+            if day_directory.is_dir() and DAY_DIRECTORY_PATTERN.match(relative):
+                days.append(relative.replace("/", "-"))
+
+        return sorted(days, reverse=True)
+
+    def list_clips(self, camera: str, day: str) -> list[dict]:
+        root = self._browse_root()
+        year, month, day_number = day.split("-")
+        day_directory = root / camera / year / month / day_number
+        clips = []
+
+        if day_directory.is_dir():
+            for path in day_directory.glob("*/*"):
+                key = str(path.relative_to(root))
+                if path.is_file() and CLIP_KEY_PATTERN.match(key):
+                    clips.append({"key": key, "size": path.stat().st_size})
+
+        clips.sort(key=lambda clip: clip["key"])
+        return clips
+
+    def clip_path(self, key: str) -> Path:
+        """Absolute path of one clip for serving; raises if unknown."""
+
+        if not CLIP_KEY_PATTERN.match(key):
+            raise ValueError("Not a clip key")
+
+        root = self._browse_root()
+        path = root / key
+
+        if not path.is_file():
+            raise FileNotFoundError(key)
+
+        return path
+
+    def _park_if_browse_idle(self) -> None:
+        settings = self._settings_service.get()
+        archive_root = Path(settings.archive_directory)
+
+        with self._lock:
+            idle = monotonic() >= self._browse_until
+
+        if not idle or not os.path.ismount(archive_root):
+            return
+
+        # Do not interfere with a running batch.
+        if not self._flush_lock.acquire(blocking=False):
+            return
+
+        try:
+            with self._lock:
+                if monotonic() < self._browse_until:
+                    return
+
+            LOGGER.info("Archive disk idle after browsing; parking it")
+            self._unmount_and_park(archive_root, settings.archive_disk_device)
+
+        finally:
+            self._flush_lock.release()
+
+    # ------------------------------------------------------------------
     # Status
     # ------------------------------------------------------------------
 
@@ -200,6 +314,11 @@ class ArchiveService:
                     self.flush(reason="timer" if due else "buffer")
                 except Exception:
                     LOGGER.exception("Archive batch failed")
+
+            try:
+                self._park_if_browse_idle()
+            except Exception:
+                LOGGER.exception("Archive park after browsing failed")
 
             self._stop.wait(timeout=CHECK_SECONDS)
 
@@ -267,7 +386,13 @@ class ArchiveService:
             )
 
         finally:
-            self._unmount_and_park(archive_root, settings.archive_disk_device)
+            with self._lock:
+                browsing = monotonic() < self._browse_until
+
+            if browsing:
+                LOGGER.info("Archive disk stays awake: browsing in progress")
+            else:
+                self._unmount_and_park(archive_root, settings.archive_disk_device)
 
     # ------------------------------------------------------------------
     # Disk handling

@@ -32,11 +32,12 @@ export const api = {
   saveSettings: (changes) => fetch("/api/settings", json("PUT", changes)).then(handle),
   testConnection: () => fetch("/api/settings/test", { method: "POST" }).then(handle),
 
-  cameras: () => fetch("/api/browse/cameras").then(handle),
-  days: (camera) => fetch(`/api/browse/days?camera=${camera}`).then(handle),
-  clips: (camera, day) => fetch(`/api/browse/clips?camera=${camera}&day=${day}`).then(handle),
-  previewUrl: (key, account = "") =>
-    `/api/preview?key=${encodeURIComponent(key)}&account=${encodeURIComponent(account)}`,
+  cameras: (source = "cloud") => fetch(`/api/browse/cameras?source=${source}`).then(handle),
+  days: (camera, source = "cloud") => fetch(`/api/browse/days?camera=${camera}&source=${source}`).then(handle),
+  clips: (camera, day, source = "cloud") =>
+    fetch(`/api/browse/clips?camera=${camera}&day=${day}&source=${source}`).then(handle),
+  previewUrl: (key, account = "", source = "cloud") =>
+    `/api/preview?key=${encodeURIComponent(key)}&account=${encodeURIComponent(account)}&source=${source}`,
 
   jobs: () => fetch("/api/jobs").then(handle),
   startDownload: (request) => fetch("/api/jobs/download", json("POST", request)).then(handle),

@@ -9,6 +9,7 @@ from threading import Lock
 from zoneinfo import ZoneInfo
 
 from visdcam_downloader.config import TEMP_DIRECTORY
+from visdcam_downloader.services.archive_client import ArchiveClient
 from visdcam_downloader.services.b2_client import B2Client, DownloadCancelled
 from visdcam_downloader.services.clips import Clip, output_name
 from visdcam_downloader.services.ffmpeg_tools import FfmpegCancelled, FfmpegTools
@@ -35,9 +36,14 @@ class Workflows:
         self,
         settings_service: SettingsService,
         b2_client: B2Client,
+        archive_client: ArchiveClient,
     ) -> None:
         self._settings_service = settings_service
         self._b2 = b2_client
+        self._archive = archive_client
+
+    def _client_for(self, source: str):
+        return self._archive if source == "disk" else self._b2
 
     def tools(self) -> FfmpegTools:
         return FfmpegTools(self._settings_service.get().ffmpeg_path)
@@ -52,9 +58,11 @@ class Workflows:
         clips: list[Clip],
         destination_for: "callable",
         *,
+        client=None,
         skip_existing: bool = False,
         progress_span: tuple[float, float] = (0.0, 1.0),
     ) -> list[Path]:
+        client = client or self._b2
         settings = self._settings_service.get()
         total_bytes = sum(clip.size for clip in clips) or 1
         done_bytes: dict[str, int] = {}
@@ -86,7 +94,7 @@ class Workflows:
                     done_bytes[clip.key] = completed
                     report()
 
-            self._b2.download(
+            client.download(
                 clip, destination,
                 on_progress=on_progress,
                 cancel_event=context.cancel_event,
@@ -123,6 +131,8 @@ class Workflows:
         timezone = ZoneInfo(settings.clip_timezone)
 
         camera = str(params["camera"])
+        source = str(params.get("source", "cloud"))
+        client = self._client_for(source)
         start = datetime.fromisoformat(params["start"])
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone)
@@ -130,7 +140,7 @@ class Workflows:
         end = start + timedelta(seconds=duration_seconds)
 
         context.progress(0.0, "Listing clips")
-        clips = self._b2.list_clips(camera, start, end)
+        clips = client.list_clips(camera, start, end)
 
         if not clips:
             raise RuntimeError(
@@ -150,6 +160,7 @@ class Workflows:
             files = self._download_many(
                 context, clips,
                 lambda clip: work_dir / clip.filename,
+                client=client,
                 progress_span=(0.0, 0.85),
             )
 
