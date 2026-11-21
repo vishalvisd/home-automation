@@ -82,6 +82,9 @@ class LiveViewService:
 
         for camera in settings.cameras:
             source = self._live_source(camera)
+            sub_available = source == "main" and bool(
+                camera.sub_stream_url.strip()
+            )
 
             cameras.append(
                 {
@@ -92,6 +95,9 @@ class LiveViewService:
                     # "main" for RTSP cameras, "none" for cameras go2rtc
                     # cannot serve.
                     "live_source": source,
+                    # go2rtc stream names: "<key>" is the main stream,
+                    # "<key>_sub" the sub stream when the camera has one.
+                    "sub_available": sub_available,
                     "loaded": (
                         loaded is not None and camera.key in loaded
                     ),
@@ -139,12 +145,22 @@ class LiveViewService:
 
             lines.append(f"  {camera.key}: {self._yaml_string(url)}")
 
+            sub_url = camera.sub_stream_url.strip()
+
+            if sub_url:
+                if "#" not in sub_url:
+                    sub_url += "#backchannel=0"
+                lines.append(
+                    f"  {camera.key}_sub: {self._yaml_string(sub_url)}"
+                )
+
         return "\n".join(lines) + "\n"
 
     @staticmethod
     def _live_source(camera: CameraConfig) -> str:
-        # Live view always shows the main stream; the sub stream is
-        # reserved for the small cloud copy.
+        # Live view shows the main stream by default; the sub stream
+        # is offered too when the camera has one, so both can be
+        # compared in the browser.
         if camera.source_type != "rtsp":
             return "none"
 

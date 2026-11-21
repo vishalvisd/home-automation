@@ -990,8 +990,10 @@ The backend owns go2rtc's config file, runtime/go2rtc.yaml. It rewrites
 it from runtime/cameras.json on every camera settings save and on
 backend start, and restarts go2rtc when the file changed. Each RTSP
 camera becomes a go2rtc stream named by its key (cam1, cam2, ...). The
-stream used is always stream_url, the main stream. ESP32-CAM cameras are
-not served.
+main stream (stream_url) is served as "camN" and, when the camera has a
+sub_stream_url, the sub stream as "camN_sub". The Live View tab has a
+Main / Sub switch so both can be compared. ESP32-CAM cameras are not
+served.
 
 The browser player is go2rtc's video-rtc.js web component, vendored in
 frontend/src/vendor (MIT) so it loads from the Pi's own page. It

@@ -15,6 +15,7 @@ if (!customElements.get("video-rtc")) {
 }
 
 const SELECTION_STORAGE_KEY = "liveViewSelection";
+const QUALITY_STORAGE_KEY = "liveViewQuality";
 
 // WebRTC gives the lowest delay. MSE is the fallback for browsers or
 // networks where WebRTC does not connect.
@@ -36,6 +37,24 @@ function saveSelection(keys) {
     localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(keys));
   } catch {
     // Browser storage unavailable; the selection just is not remembered.
+  }
+}
+
+
+function loadQuality() {
+  try {
+    return localStorage.getItem(QUALITY_STORAGE_KEY) === "sub" ? "sub" : "main";
+  } catch {
+    return "main";
+  }
+}
+
+
+function saveQuality(quality) {
+  try {
+    localStorage.setItem(QUALITY_STORAGE_KEY, quality);
+  } catch {
+    // Not remembered, that is all.
   }
 }
 
@@ -69,7 +88,13 @@ export default function LiveViewPanel({ active }) {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(() => loadSelection());
+  const [quality, setQuality] = useState(() => loadQuality());
   const [syncing, setSyncing] = useState(false);
+
+  function chooseQuality(value) {
+    setQuality(value);
+    saveQuality(value);
+  }
 
   async function refresh() {
     try {
@@ -141,7 +166,29 @@ export default function LiveViewPanel({ active }) {
           <p className="mt-2 text-sm text-slate-600">
             Streams come straight from the cameras through go2rtc on
             the Pi, with no re-encoding. Tick the cameras to watch.
+            Main is what the archive disk records; Sub is what goes to
+            the cloud.
           </p>
+
+          <div className="mt-3 inline-flex rounded-xl border border-slate-300 bg-white p-1 text-sm font-semibold">
+            {[
+              ["main", "Main stream"],
+              ["sub", "Sub stream"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => chooseQuality(value)}
+                className={`rounded-lg px-3 py-1.5 ${
+                  quality === value
+                    ? "bg-slate-950 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -218,9 +265,7 @@ export default function LiveViewPanel({ active }) {
                 {camera.name}
               </span>
               <span className="text-xs text-slate-500">
-                {camera.live_source === "sub"
-                  ? "sub stream"
-                  : "main stream"}
+                {camera.sub_available ? "main + sub" : "main only"}
                 {camera.loaded ? "" : " · not loaded"}
               </span>
             </label>
@@ -230,17 +275,26 @@ export default function LiveViewPanel({ active }) {
 
       {ready && active && playing.length > 0 && (
         <div className={`mt-5 grid gap-4 ${gridClass}`}>
-          {playing.map((camera) => (
-            <div key={camera.key}>
-              <LivePlayer
-                streamKey={camera.key}
-                port={status.port}
-              />
-              <p className="mt-2 text-sm font-medium text-slate-800">
-                {camera.name}
-              </p>
-            </div>
-          ))}
+          {playing.map((camera) => {
+            const useSub = quality === "sub" && camera.sub_available;
+            const streamKey = useSub ? `${camera.key}_sub` : camera.key;
+
+            return (
+              <div key={streamKey}>
+                <LivePlayer streamKey={streamKey} port={status.port} />
+                <p className="mt-2 text-sm font-medium text-slate-800">
+                  {camera.name}
+                  <span className="ml-2 text-xs font-normal text-slate-500">
+                    {useSub
+                      ? "sub stream"
+                      : quality === "sub"
+                        ? "main stream (no sub stream set)"
+                        : "main stream"}
+                  </span>
+                </p>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
