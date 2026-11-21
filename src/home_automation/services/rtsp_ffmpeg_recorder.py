@@ -469,6 +469,19 @@ class RtspFfmpegRecorder:
             )
             return
 
+        # A clip cut short by a kill or a double signal has no index and
+        # cannot be played or joined. Better to lose it here, loudly,
+        # than to upload or archive garbage.
+        if not self._playable(file_path):
+            file_path.unlink(missing_ok=True)
+
+            LOGGER.error(
+                "Unplayable camera segment discarded [%s]: %s",
+                self.label,
+                file_path,
+            )
+            return
+
         with self._lock:
             self._last_completed_fragment = str(file_path)
 
@@ -487,6 +500,27 @@ class RtspFfmpegRecorder:
                     self.label,
                     file_path,
                 )
+
+    @staticmethod
+    def _playable(file_path: Path) -> bool:
+        """True when ffprobe can read the file's header and duration."""
+
+        try:
+            result = subprocess.run(
+                [
+                    FFPROBE_BINARY, "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "csv=p=0", str(file_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except Exception:
+            return False
+
+        return result.returncode == 0 and result.stdout.strip() not in ("", "N/A")
 
     def _discard_leftover_files(self, camera_directory: Path) -> None:
         """

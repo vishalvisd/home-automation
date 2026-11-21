@@ -138,6 +138,12 @@ ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn home_automation.api.app:app --host 0.
 Restart=always
 RestartSec=5
 
+# Only the Python process gets the stop signal. The backend then stops
+# each ffmpeg itself with one interrupt, so ffmpeg can finish writing
+# the clip it is on. With the default KillMode systemd signals ffmpeg
+# too, and a second signal makes ffmpeg abort mid-write.
+KillMode=mixed
+
 TimeoutStopSec=120
 
 [Install]

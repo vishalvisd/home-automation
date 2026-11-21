@@ -35,6 +35,21 @@ def join_clips(
     if not clip_files:
         raise ValueError("No clips to join")
 
+    # A clip cut short on the Pi (no index) would make ffmpeg refuse the
+    # whole join. Leave it out and say so, rather than fail everything.
+    readable: list[Path] = []
+    for path in clip_files:
+        if path.suffix.lower() == ".mp4" and tools.available() and tools.duration_seconds(path) is None:
+            if on_log is not None:
+                on_log(f"Skipping {path.name}: file is damaged (no index)")
+            continue
+        readable.append(path)
+
+    if not readable:
+        raise ValueError("Every clip in the window is damaged")
+
+    clip_files = readable
+
     extensions = {path.suffix.lower() for path in clip_files}
 
     if len(extensions) != 1:
