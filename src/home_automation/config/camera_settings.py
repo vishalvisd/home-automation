@@ -28,10 +28,21 @@ class CameraConfig(BaseModel):
     # Ignored for ESP32-CAM cameras.
     stream_url: str = ""
 
-    # RTSP field, optional. The camera's smaller sub stream, used only
-    # for live view in the browser (go2rtc). When empty, live view uses
-    # stream_url. Ignored for ESP32-CAM cameras.
-    live_stream_url: str = ""
+    # RTSP field, optional. The camera's smaller sub stream. When set,
+    # the cloud copy records this stream instead of stream_url, so the
+    # upload is small. The archive on the disk and live view always use
+    # stream_url (the main stream). Ignored for ESP32-CAM cameras.
+    sub_stream_url: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_old_field_name(cls, data):
+        # The field was called live_stream_url until 2026-11.
+        if isinstance(data, dict) and "live_stream_url" in data:
+            data = dict(data)
+            legacy = data.pop("live_stream_url")
+            data.setdefault("sub_stream_url", legacy)
+        return data
 
     @model_validator(mode="after")
     def validate_source_fields(self) -> "CameraConfig":
@@ -47,11 +58,10 @@ class CameraConfig(BaseModel):
                     f"{self.name}: the stream URL must start with rtsp://"
                 )
 
-            live_url = self.live_stream_url.strip()
-            if live_url and not live_url.lower().startswith("rtsp://"):
+            sub_url = self.sub_stream_url.strip()
+            if sub_url and not sub_url.lower().startswith("rtsp://"):
                 raise ValueError(
-                    f"{self.name}: the live view stream URL must start "
-                    "with rtsp://"
+                    f"{self.name}: the sub stream URL must start with rtsp://"
                 )
 
         return self
@@ -94,6 +104,20 @@ class CameraSettings(BaseModel):
     # segment closes and this many are already waiting, the oldest
     # waiting segment is deleted without being uploaded.
     pending_upload_limit: int = Field(default=3, ge=1)
+
+    # Archive of the main streams on a USB disk. Clips are buffered in
+    # RAM and moved to the disk in batches so the disk can rest (parked)
+    # between batches. The disk is mounted only during a batch; the
+    # fstab entry installed by scripts/install_archive.sh lets the
+    # service user mount it. There is no day limit: when free space
+    # falls under archive_min_free_gb the oldest day is deleted.
+    archive_enabled: bool = False
+    archive_directory: str = "/mnt/cctv"
+    archive_disk_device: str = "/dev/disk/by-label/cctv"
+    archive_buffer_directory: str = "/dev/shm/home-automation/archive"
+    archive_min_free_gb: int = Field(default=20, ge=1)
+    archive_flush_minutes: int = Field(default=30, ge=1)
+    archive_buffer_limit_mb: int = Field(default=800, ge=50)
 
     # Backblaze B2 upload. Accounts and buckets live in
     # runtime/backblaze_credentials.json; uploads rotate between the

@@ -132,3 +132,18 @@ export async function testBackblazeAccount(account) {
 
   return handleResponse(response);
 }
+
+
+export async function getArchiveStatus() {
+  const response = await fetch("/api/cameras/archive");
+  return handleResponse(response);
+}
+
+
+export async function flushArchive() {
+  const response = await fetch("/api/cameras/archive/flush", {
+    method: "POST",
+  });
+
+  return handleResponse(response);
+}

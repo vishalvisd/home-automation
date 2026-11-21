@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 
 import {
+  flushArchive,
+  getArchiveStatus,
   getBackblazeAccounts,
   getBackblazeRotation,
   getCameraSettings,
@@ -61,6 +63,7 @@ export default function CameraPanel() {
   const [rotation, setRotation] = useState(null);
   // Result of the last Test per account row, keyed by row index.
   const [accountTests, setAccountTests] = useState({});
+  const [archive, setArchive] = useState(null);
 
   async function loadSettings() {
     try {
@@ -85,6 +88,29 @@ export default function CameraPanel() {
       );
     } catch (requestError) {
       setError(requestError.message);
+    }
+  }
+
+  async function refreshArchive() {
+    try {
+      setArchive(await getArchiveStatus());
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function runArchiveBatch() {
+    setPending("archive");
+    setMessage(null);
+    setError(null);
+
+    try {
+      setArchive(await flushArchive());
+      setMessage("Archive batch finished.");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setPending(null);
     }
   }
 
@@ -292,7 +318,7 @@ export default function CameraPanel() {
             stream_path: "/stream",
             control_port: 8080,
             stream_url: "",
-            live_stream_url: "",
+            sub_stream_url: "",
           },
         ],
       };
@@ -314,6 +340,7 @@ export default function CameraPanel() {
     loadRotation();
     refreshStatus();
     refreshPresetStatus();
+    refreshArchive();
 
     const recordingInterval =
       window.setInterval(
@@ -327,12 +354,21 @@ export default function CameraPanel() {
         30000,
       );
 
+    const archiveInterval =
+      window.setInterval(
+        refreshArchive,
+        15000,
+      );
+
     return () => {
       window.clearInterval(
         recordingInterval,
       );
       window.clearInterval(
         presetInterval,
+      );
+      window.clearInterval(
+        archiveInterval,
       );
     };
   }, []);
@@ -563,6 +599,193 @@ export default function CameraPanel() {
           </span>
           . Failed camera requests are ignored and
           retried at the next scheduled check.
+        </p>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-slate-950">
+              Archive on the USB disk
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              Full-quality main-stream clips are buffered in RAM and
+              moved to the disk in batches. The disk is parked between
+              batches. When free space runs low the oldest day is
+              deleted.
+            </p>
+          </div>
+
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              !settings.archive_enabled
+                ? "bg-slate-100 text-slate-600"
+                : archive?.last_error
+                  ? "bg-red-100 text-red-700"
+                  : archive?.disk_present
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {!settings.archive_enabled
+              ? "Archive off"
+              : archive?.last_error
+                ? "Archive error"
+                : archive?.disk_present
+                  ? archive?.mounted
+                    ? "Disk awake, batch running"
+                    : archive?.parked
+                      ? "Disk parked"
+                      : "Disk present"
+                  : "Disk not plugged in"}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <label className="rounded-2xl bg-slate-50 p-4">
+            <span className="text-sm font-medium text-slate-700">
+              Archive enabled
+            </span>
+
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={settings.archive_enabled}
+                onChange={(event) =>
+                  updateSetting("archive_enabled", event.target.checked)
+                }
+                className="h-5 w-5"
+              />
+
+              <span className="text-sm">
+                {settings.archive_enabled ? "Enabled" : "Disabled"}
+              </span>
+            </div>
+          </label>
+
+          <NumberSetting
+            label="Batch every"
+            value={settings.archive_flush_minutes}
+            suffix="minutes"
+            min={1}
+            onChange={(value) =>
+              updateSetting("archive_flush_minutes", value)
+            }
+          />
+
+          <NumberSetting
+            label="RAM buffer limit"
+            value={settings.archive_buffer_limit_mb}
+            suffix="MB"
+            min={50}
+            onChange={(value) =>
+              updateSetting("archive_buffer_limit_mb", value)
+            }
+          />
+
+          <NumberSetting
+            label="Keep at least this much free"
+            value={settings.archive_min_free_gb}
+            suffix="GB"
+            min={1}
+            onChange={(value) =>
+              updateSetting("archive_min_free_gb", value)
+            }
+          />
+
+          <TextField
+            label="Disk mount folder"
+            value={settings.archive_directory}
+            mono
+            onChange={(value) => updateSetting("archive_directory", value)}
+          />
+
+          <TextField
+            label="Disk device"
+            value={settings.archive_disk_device}
+            mono
+            onChange={(value) =>
+              updateSetting("archive_disk_device", value)
+            }
+          />
+        </div>
+
+        {archive && (
+          <div className="mt-4 grid gap-3 text-xs text-slate-600 md:grid-cols-2">
+            <div className="rounded-xl bg-slate-50 p-3">
+              <div>
+                Waiting in RAM:{" "}
+                <span className="font-semibold text-slate-800">
+                  {archive.waiting_files} clip(s), {archive.waiting_mb} MB
+                </span>
+              </div>
+              <div>
+                Last batch:{" "}
+                <span className="font-semibold text-slate-800">
+                  {archive.last_flush_at
+                    ? `${archive.last_flush_at.slice(0, 16).replace("T", " ")}, ${archive.last_flush_files} clip(s), ${archive.last_flush_mb} MB`
+                    : "none yet"}
+                </span>
+              </div>
+              {archive.disk?.total_gb != null && (
+                <div>
+                  Disk:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {archive.disk.free_gb} GB free of {archive.disk.total_gb} GB,
+                    {" "}{archive.disk.days} day(s) kept
+                    {archive.disk.oldest_day
+                      ? `, oldest ${archive.disk.oldest_day}`
+                      : ""}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-3">
+              <div className="font-semibold text-slate-800">Disk health (SMART)</div>
+              {archive.smart?.error ? (
+                <div className="text-amber-700">{archive.smart.error}</div>
+              ) : archive.smart?.read_at ? (
+                <div>
+                  reallocated {archive.smart.reallocated_sectors ?? "?"},
+                  pending {archive.smart.pending_sectors ?? "?"},
+                  uncorrectable {archive.smart.uncorrectable_sectors ?? "?"},
+                  {" "}{archive.smart.power_on_hours ?? "?"} h on,
+                  {" "}{archive.smart.start_stop_count ?? "?"} starts,
+                  {" "}{archive.smart.temperature_c ?? "?"} °C
+                  <span className="text-slate-400">
+                    {" "}(read {archive.smart.read_at.slice(0, 16).replace("T", " ")})
+                  </span>
+                </div>
+              ) : (
+                <div>Read during the next batch.</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {archive?.last_error && (
+          <div className="mt-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">
+            {archive.last_error}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={runArchiveBatch}
+          disabled={pending !== null || !settings.archive_enabled}
+          className="mt-4 flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:opacity-50"
+        >
+          {pending === "archive" ? (
+            <LoaderCircle size={16} className="animate-spin" />
+          ) : null}
+          Run a batch now
+        </button>
+
+        <p className="mt-3 text-xs text-slate-500">
+          Changing the archive setting takes effect after Save Settings
+          and the next Stop / Start Recording.
         </p>
       </div>
 
@@ -1064,23 +1287,25 @@ export default function CameraPanel() {
 
                       <div className="mt-4">
                         <TextField
-                          label="Live view stream URL (optional)"
-                          value={camera.live_stream_url ?? ""}
+                          label="Sub stream URL for the cloud copy (optional)"
+                          value={camera.sub_stream_url ?? ""}
                           mono
                           placeholder="rtsp://user:password@192.168.1.18:554/ch0_1.264"
                           onChange={(value) =>
                             updateCamera(
                               index,
-                              "live_stream_url",
+                              "sub_stream_url",
                               value,
                             )
                           }
                         />
 
                         <p className="mt-2 text-xs text-slate-500">
-                          The camera's smaller sub stream, used only
-                          for the Live View tab. Leave empty to watch
-                          the recording stream instead.
+                          When set, the clips uploaded to Backblaze
+                          come from this smaller stream. The archive
+                          disk and Live View always use the main
+                          stream above. Leave empty to upload the main
+                          stream.
                         </p>
                       </div>
                     </div>
@@ -1124,6 +1349,37 @@ export default function CameraPanel() {
                       cameraStatus.last_completed_fragment
                     }
                   />
+                )}
+
+                {cameraStatus?.archive && (
+                  <div
+                    className={`mt-3 rounded-xl p-3 text-xs ${
+                      cameraStatus.archive.last_error
+                        ? "bg-red-50 text-red-700"
+                        : cameraStatus.archive.stream_connected
+                          ? "bg-emerald-50 text-emerald-800"
+                          : "bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    <span className="font-semibold">Archive recorder:</span>{" "}
+                    {cameraStatus.archive.last_error
+                      ? cameraStatus.archive.last_error
+                      : cameraStatus.archive.stream_connected
+                        ? `recording main stream${
+                            cameraStatus.archive.video_codec
+                              ? ` (${cameraStatus.archive.video_codec}, audio ${cameraStatus.archive.audio_codec ?? "none"})`
+                              : ""
+                          }`
+                        : cameraStatus.archive.running
+                          ? "starting"
+                          : "stopped"}
+                    {cameraStatus.archive.last_completed_fragment && (
+                      <span className="text-slate-500">
+                        {" "}· last clip{" "}
+                        {cameraStatus.archive.last_completed_fragment.split("/").pop()}
+                      </span>
+                    )}
+                  </div>
                 )}
 
                 <button

@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from home_automation.api.dependencies import (
+    get_archive_service,
     get_camera_preset_service,
     get_camera_recorder_service,
     get_camera_settings_service,
@@ -21,6 +22,7 @@ from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
 from home_automation.services.live_view_service import LiveViewService
+from home_automation.services.archive_service import ArchiveService
 
 from pydantic import BaseModel, Field
 
@@ -62,6 +64,11 @@ CameraPresetDependency = Annotated[
 LiveViewDependency = Annotated[
     LiveViewService,
     Depends(get_live_view_service),
+]
+
+ArchiveDependency = Annotated[
+    ArchiveService,
+    Depends(get_archive_service),
 ]
 
 class BackblazeAccountRequest(BaseModel):
@@ -110,6 +117,22 @@ def save_settings(
     saved = service.save(settings)
     live_view.sync()
     return saved
+
+
+@router.get("/archive")
+def archive_status(
+    archive: ArchiveDependency,
+) -> dict:
+    return archive.status()
+
+
+@router.post("/archive/flush")
+def archive_flush(
+    archive: ArchiveDependency,
+) -> dict:
+    """Run one batch now: mount, copy waiting clips, park."""
+
+    return archive.flush(reason="manual")
 
 
 @router.get("/live")

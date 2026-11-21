@@ -67,6 +67,17 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - Do not auto-restart the shared camera power relay because one camera
   fails.
 
+## Archive disk rules that are deliberate
+
+- Main streams go to a USB laptop disk through `ArchiveService`: clips
+  wait in RAM, move to the disk in batches, and the disk is parked
+  (`hdparm -y`) between batches. Never leave it spinning; never write
+  the archive to the boot pen drive.
+- No day limit. When free space falls under `archive_min_free_gb` the
+  oldest day is deleted in one go.
+- Setup is `scripts/install_archive.sh` (fstab `noauto,user`, sudoers
+  for park and SMART, persistent journal).
+
 ## Live view
 
 - Browser live view is served by go2rtc, a separate systemd service on

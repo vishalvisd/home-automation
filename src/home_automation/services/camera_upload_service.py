@@ -13,6 +13,7 @@ from home_automation.services.camera_settings_service import (
 from home_automation.services.camera_storage_provider import (
     CameraStorageProvider,
 )
+from home_automation.services.clip_naming import clip_key
 
 
 LOGGER = logging.getLogger("home_automation")
@@ -142,11 +143,7 @@ class CameraUploadService:
             tz=LOCAL_TIME_ZONE,
         )
 
-        remote_key = self._build_remote_key(
-            camera,
-            recorded_at,
-            file_path.suffix,
-        )
+        remote_key = clip_key(camera, recorded_at, file_path.suffix)
 
         LOGGER.info(
             "Camera upload started [%s]: %s -> %s",
@@ -192,27 +189,3 @@ class CameraUploadService:
                     camera.name,
                     file_path,
                 )
-
-    @staticmethod
-    def _build_remote_key(
-        camera: CameraConfig,
-        timestamp: datetime,
-        suffix: str,
-    ) -> str:
-        """
-        cam1/YYYY/MM/DD/HH/cam_1_YYYY_MM_DD_HH_MM_SS.<ext>
-
-        The timestamp is the clip's close time in Asia/Kolkata. The
-        extension follows the local file: .ts for ESP32-CAM
-        recordings, .mp4 for RTSP cameras. Another project downloads
-        these objects, so do not change the layout casually.
-        """
-
-        camera_number = camera.key.removeprefix("cam")
-
-        return (
-            f"{camera.key}/"
-            f"{timestamp:%Y/%m/%d/%H}/"
-            f"cam_{camera_number}_{timestamp:%Y_%m_%d_%H_%M_%S}"
-            f"{suffix}"
-        )

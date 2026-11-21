@@ -169,6 +169,7 @@ home-automation/
 │   ├── setup_pi.sh             # Fresh Pi setup
 │   ├── update_pi.sh            # Normal safe deployment/update
 │   ├── install_go2rtc.sh       # One-time go2rtc install for live view
+│   ├── install_archive.sh      # One-time USB archive disk setup
 │   ├── find_camera.py          # Desk tool: find a camera on the LAN, get its RTSP URL
 │   └── test_relays.py          # Sequential relay hardware test
 ├── src/home_automation/
@@ -554,9 +555,16 @@ esp32_mjpeg   ESP32-CAM serving MJPEG over HTTP. Uses host, stream_path and
               to H.264 on the Pi. Output is MPEG-TS (.ts). Day/night presets apply.
 
 rtsp          Commercial IP camera serving H.264/H.265 over RTSP. Uses stream_url,
-              the full RTSP URL including the camera login if it needs one.
-              ffmpeg copies the video untouched and converts audio to AAC.
-              Output is MP4 (.mp4) that plays on Mac and phone.
+              the full RTSP URL of the main stream including the camera login
+              if it needs one, and optionally sub_stream_url, the camera's
+              smaller second stream. ffmpeg copies the video untouched and
+              converts audio to AAC. Output is MP4 (.mp4).
+
+              With the archive enabled an RTSP camera has two recorders:
+              "cloud" records sub_stream_url (or stream_url when empty) with
+              24 kbps mono audio and uploads each clip to Backblaze;
+              "archive" records stream_url with 32 kbps audio and keeps each
+              clip on the USB disk. Live view always shows stream_url.
 
 Both types run side by side. Cameras can be added and removed from the UI.
 The first commercial camera is a Trueview T18296S (H.265 2304x1296 @ 15 fps,
@@ -926,6 +934,43 @@ cam2/2026/08/16/20/cam_2_2026_08_16_20_23_41.ts
 
 Do not casually change this naming scheme because the downloader app in downloader/ (and previously a separate project) reads these objects and joins them into videos.
 
+Archive on the USB disk
+
+Full-quality clips of every RTSP camera's main stream are kept on a USB
+disk attached to the Pi (ArchiveService). The disk is a laptop drive, so it
+is not left spinning: clips are buffered in RAM
+(archive_buffer_directory, under /dev/shm) and moved to the disk in
+batches, every archive_flush_minutes or sooner when the buffer passes
+archive_buffer_limit_mb. One batch is:
+
+mount the disk (this spins it up)
+  -> copy every waiting clip to <archive_directory>/camN/YYYY/MM/DD/,
+     same file names as the cloud copy, fsync, verify size, delete from RAM
+  -> while free space < archive_min_free_gb: delete the oldest day
+     (all cameras) in one go
+  -> read the disk's SMART counters for the UI
+  -> sync, unmount, park the disk (hdparm -y)
+
+There is no day limit; the disk fills and the oldest day goes. If the disk
+is unplugged or will not mount, clips wait in RAM up to the buffer limit and
+the oldest waiting clip is dropped beyond it, so RAM never fills. On a
+clean shutdown a final batch runs so waiting clips are not lost.
+
+One-time Pi setup: scripts/install_archive.sh. It rewrites the /etc/fstab
+line for /mnt/cctv with "noauto,user" (not mounted at boot, the service
+user may mount it), adds a sudoers rule for exactly the park and SMART
+commands on /dev/disk/by-label/cctv, installs hdparm and smartmontools,
+and makes the system journal persistent (200 MB cap). The disk itself is
+formatted ext4 with the label "cctv" by hand.
+
+This enclosure (Toshiba MQ01UBD100) parks with hdparm -y, not with the
+SCSI stop command, and SMART needs "-d sat,16". The disk's state is shown in
+the CCTV tab: parked or awake, waiting clips, last batch, free space,
+oldest day, SMART counters.
+
+GET  /api/cameras/archive         status
+POST /api/cameras/archive/flush   run one batch now
+
 Live view in the browser (go2rtc)
 
 Browsers cannot play RTSP. The Live View tab uses go2rtc, a separate
@@ -945,9 +990,8 @@ The backend owns go2rtc's config file, runtime/go2rtc.yaml. It rewrites
 it from runtime/cameras.json on every camera settings save and on
 backend start, and restarts go2rtc when the file changed. Each RTSP
 camera becomes a go2rtc stream named by its key (cam1, cam2, ...). The
-stream used is the camera's live_stream_url (meant for the smaller sub
-stream) and falls back to stream_url when that is empty. ESP32-CAM
-cameras are not served.
+stream used is always stream_url, the main stream. ESP32-CAM cameras are
+not served.
 
 The browser player is go2rtc's video-rtc.js web component, vendored in
 frontend/src/vendor (MIT) so it loads from the Pi's own page. It
@@ -967,6 +1011,8 @@ GET  /api/cameras/backblaze/accounts
 PUT  /api/cameras/backblaze/accounts
 POST /api/cameras/backblaze/accounts/test
 GET  /api/cameras/backblaze/rotation
+GET  /api/cameras/archive
+POST /api/cameras/archive/flush
 GET  /api/cameras/live
 POST /api/cameras/live/sync
 
@@ -1077,6 +1123,8 @@ GET  /api/cameras/backblaze/accounts
 PUT  /api/cameras/backblaze/accounts
 POST /api/cameras/backblaze/accounts/test
 GET  /api/cameras/backblaze/rotation
+GET  /api/cameras/archive
+POST /api/cameras/archive/flush
 GET  /api/cameras/live
 POST /api/cameras/live/sync
 

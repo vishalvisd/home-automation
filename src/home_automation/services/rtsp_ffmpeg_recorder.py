@@ -23,8 +23,15 @@ FFMPEG_BINARY = shutil.which("ffmpeg")
 FFPROBE_BINARY = shutil.which("ffprobe")
 
 # Commercial cameras usually send G.711 audio, which MP4 cannot hold.
-# Audio is small, so converting it to AAC costs almost no CPU.
+# Audio is small, so converting it to AAC costs almost no CPU. The
+# cloud copy uses a smaller mono setting; the archive keeps stereo.
 AUDIO_BITRATE = "32k"
+CLOUD_AUDIO_BITRATE = "24k"
+
+# One recorder records one stream of a camera for one purpose.
+#   cloud:   the clip is uploaded to Backblaze (sub stream when set)
+#   archive: the clip is kept on the USB disk (always the main stream)
+RecorderRole = str
 
 # If the camera stops sending for this long, ffmpeg exits. The recorder
 # service then restarts it after the configured delay.
@@ -61,10 +68,13 @@ class RtspFfmpegRecorder:
             None,
         ]
         | None = None,
+        *,
+        role: RecorderRole = "cloud",
     ) -> None:
         self._camera = camera
         self._settings = settings
         self._on_fragment_closed = on_fragment_closed
+        self._role = role
 
         self._lock = RLock()
         self._stop_event = Event()
@@ -84,8 +94,27 @@ class RtspFfmpegRecorder:
         self._video_codec: str | None = None
         self._audio_codec: str | None = None
 
-        self._stream_url = camera.stream_url.strip()
+        if role == "cloud" and camera.sub_stream_url.strip():
+            self._stream_url = camera.sub_stream_url.strip()
+        else:
+            self._stream_url = camera.stream_url.strip()
+
         self._display_url = self._redact_url(self._stream_url)
+
+        base_directory = (
+            Path(settings.archive_buffer_directory)
+            if role == "archive"
+            else Path(settings.recording_directory)
+        )
+        self._camera_directory = base_directory / camera.key
+
+    @property
+    def role(self) -> RecorderRole:
+        return self._role
+
+    @property
+    def label(self) -> str:
+        return f"{self._camera.name} ({self._role})"
 
     # ------------------------------------------------------------------
     # Public interface (same shape as CameraRecorder)
@@ -102,10 +131,7 @@ class RtspFfmpegRecorder:
             if self._running:
                 return
 
-            camera_directory = (
-                Path(self._settings.recording_directory)
-                / self._camera.key
-            )
+            camera_directory = self._camera_directory
 
             camera_directory.mkdir(
                 parents=True,
@@ -160,7 +186,7 @@ class RtspFfmpegRecorder:
 
                 LOGGER.info(
                     "Camera recorder started: %s (%s, video=%s, audio=%s)",
-                    self._camera.name,
+                    self.label,
                     self._display_url,
                     video_codec,
                     audio_codec or "none",
@@ -186,7 +212,7 @@ class RtspFfmpegRecorder:
             except subprocess.TimeoutExpired:
                 LOGGER.warning(
                     "ffmpeg did not stop in time; killing it: %s",
-                    self._camera.name,
+                    self.label,
                 )
                 process.kill()
                 process.wait(timeout=5)
@@ -204,6 +230,7 @@ class RtspFfmpegRecorder:
             return {
                 "key": self._camera.key,
                 "name": self._camera.name,
+                "role": self._role,
                 "host": self._display_url,
                 "source_type": self._camera.source_type,
                 "running": self._running,
@@ -293,6 +320,9 @@ class RtspFfmpegRecorder:
 
         if audio_codec is None:
             command += ["-an"]
+        elif self._role == "cloud":
+            # Small mono track for the evidence copy.
+            command += ["-c:a", "aac", "-ac", "1", "-b:a", CLOUD_AUDIO_BITRATE]
         elif audio_codec == "aac":
             command += ["-c:a", "copy"]
         else:
@@ -357,7 +387,7 @@ class RtspFfmpegRecorder:
                 self._connected = True
                 LOGGER.info(
                     "Camera stream connected: %s",
-                    self._camera.name,
+                    self.label,
                 )
 
         if previous is not None:
@@ -380,7 +410,7 @@ class RtspFfmpegRecorder:
         if stop_requested:
             LOGGER.info(
                 "Camera recorder stopped: %s",
-                self._camera.name,
+                self.label,
             )
             return
 
@@ -393,7 +423,7 @@ class RtspFfmpegRecorder:
 
         LOGGER.error(
             "Camera recorder error [%s]: %s",
-            self._camera.name,
+            self.label,
             self._last_error,
         )
 
@@ -419,7 +449,7 @@ class RtspFfmpegRecorder:
                 LOGGER.warning(
                     "No new segment for %.0f seconds; killing ffmpeg: %s",
                     idle,
-                    self._camera.name,
+                    self.label,
                 )
                 process.kill()
                 return
@@ -434,7 +464,7 @@ class RtspFfmpegRecorder:
 
             LOGGER.info(
                 "Empty camera segment discarded [%s]: %s",
-                self._camera.name,
+                self.label,
                 file_path,
             )
             return
@@ -444,7 +474,7 @@ class RtspFfmpegRecorder:
 
         LOGGER.info(
             "Camera segment created [%s]: %s",
-            self._camera.name,
+            self.label,
             file_path,
         )
 
@@ -454,7 +484,7 @@ class RtspFfmpegRecorder:
             except Exception:
                 LOGGER.exception(
                     "Camera segment callback failed [%s]: %s",
-                    self._camera.name,
+                    self.label,
                     file_path,
                 )
 
@@ -473,7 +503,7 @@ class RtspFfmpegRecorder:
             LOGGER.warning(
                 "Discarded %s leftover segment(s) [%s]",
                 len(leftovers),
-                self._camera.name,
+                self.label,
             )
 
     # ------------------------------------------------------------------

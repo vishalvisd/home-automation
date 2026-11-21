@@ -26,6 +26,7 @@ from home_automation.config.application import (
     BACKBLAZE_CREDENTIALS_FILE,
 )
 from home_automation.config.logging import configure_logging
+from home_automation.services.archive_service import ArchiveService
 from home_automation.services.automation_script_service import (
     AutomationScriptService,
 )
@@ -123,9 +124,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         backblaze_b2_storage_provider,
     )
 
+    archive_service = ArchiveService(camera_settings_service)
+
     camera_recorder_service = CameraRecorderService(
         camera_settings_service,
         camera_upload_service,
+        archive_service,
     )
 
     camera_preset_service = CameraPresetService(
@@ -147,6 +151,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.automation_script_service = automation_script_service
     app.state.camera_settings_service = camera_settings_service
     app.state.camera_recorder_service = camera_recorder_service
+    app.state.archive_service = archive_service
     app.state.camera_preset_service = camera_preset_service
     app.state.backblaze_credentials_service = backblaze_credentials_service
     app.state.cloud_rotation_service = cloud_rotation_service
@@ -154,6 +159,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     watering_scheduler_service.start()
     camera_preset_service.start()
+    archive_service.start()
     camera_recorder_service.start_if_enabled()
 
     # Keep go2rtc's camera list in step with ours. Harmless when go2rtc
@@ -167,6 +173,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         camera_recorder_service.shutdown()
         camera_preset_service.stop()
         camera_upload_service.shutdown()
+        # After the recorders, so the last clips are on the disk.
+        archive_service.shutdown()
         watering_scheduler_service.stop()
         watering_service.shutdown()
         relay_manager.close()

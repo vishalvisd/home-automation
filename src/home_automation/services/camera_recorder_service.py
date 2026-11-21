@@ -17,6 +17,7 @@ from collections.abc import Callable
 from home_automation.services.camera_upload_service import (
     CameraUploadService,
 )
+from home_automation.services.archive_service import ArchiveService
 from home_automation.services.camera_stream_source import (
     CameraStreamSource,
 )
@@ -556,7 +557,15 @@ class CameraRecorder:
 
 
 class CameraRecorderService:
-    """Manage and automatically recover CCTV recording pipelines."""
+    """
+    Manage and automatically recover CCTV recording pipelines.
+
+    Each camera has one "cloud" recorder (its clips are uploaded) and,
+    when the archive is enabled, a second "archive" recorder for RTSP
+    cameras (its clips go to the USB disk). Both are supervised the
+    same way. A slot is identified by "<camera key>" for cloud and
+    "<camera key>#archive" for the archive.
+    """
 
     SUPERVISOR_CHECK_SECONDS = 2
     RECOVERY_CONFIRM_SECONDS = 5
@@ -565,8 +574,10 @@ class CameraRecorderService:
         self,
         settings_service: CameraSettingsService,
         upload_service: CameraUploadService,
+        archive_service: ArchiveService | None = None,
     ) -> None:
         self._upload_service = upload_service
+        self._archive_service = archive_service
         self._settings_service = settings_service
         self._lock = RLock()
 
@@ -575,20 +586,9 @@ class CameraRecorderService:
             CameraRecorder | RtspFfmpegRecorder,
         ] = {}
 
-        self._next_retry_at: dict[
-            str,
-            float,
-        ] = {}
-
-        self._restart_counts: dict[
-            str,
-            int,
-        ] = {}
-
-        self._recovery_pending_since: dict[
-            str,
-            float,
-        ] = {}
+        self._next_retry_at: dict[str, float] = {}
+        self._restart_counts: dict[str, int] = {}
+        self._recovery_pending_since: dict[str, float] = {}
 
         # "Desired running" is deliberately separate from
         # settings.recording_enabled.
@@ -610,19 +610,79 @@ class CameraRecorderService:
 
         self._supervisor_thread.start()
 
+    # ------------------------------------------------------------------
+    # Slots
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _slot_key(camera: CameraConfig, role: str) -> str:
+        return camera.key if role == "cloud" else f"{camera.key}#{role}"
+
+    def _roles_for(
+        self,
+        camera: CameraConfig,
+        settings: CameraSettings,
+    ) -> list[str]:
+        roles = ["cloud"]
+
+        if (
+            settings.archive_enabled
+            and self._archive_service is not None
+            and camera.source_type == "rtsp"
+        ):
+            roles.append("archive")
+
+        return roles
+
+    def _slots(self, settings: CameraSettings) -> list[tuple[CameraConfig, str]]:
+        return [
+            (camera, role)
+            for camera in settings.cameras
+            if camera.enabled
+            for role in self._roles_for(camera, settings)
+        ]
+
+    def _forget_stale_slots(self, settings: CameraSettings) -> None:
+        """
+        Drop recorders whose camera or role is no longer configured, so
+        a removed camera (or a reused key) does not show the old state.
+        """
+
+        wanted = {
+            self._slot_key(camera, role)
+            for camera in settings.cameras
+            for role in self._roles_for(camera, settings)
+        }
+
+        with self._lock:
+            stale = [key for key in self._recorders if key not in wanted]
+
+            for key in stale:
+                recorder = self._recorders.pop(key)
+                self._next_retry_at.pop(key, None)
+                self._restart_counts.pop(key, None)
+                self._recovery_pending_since.pop(key, None)
+
+                if recorder.status()["running"]:
+                    try:
+                        recorder.stop()
+                    except Exception:
+                        LOGGER.exception("Unable to stop stale recorder %s", key)
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
     def start(self) -> dict:
         settings = self._settings_service.get()
 
         with self._lock:
             self._desired_running = True
 
-        for camera in settings.cameras:
-            if camera.enabled:
-                self._start_camera(
-                    camera,
-                    settings,
-                    is_recovery=False,
-                )
+        self._forget_stale_slots(settings)
+
+        for camera, role in self._slots(settings):
+            self._start_slot(camera, role, settings, is_recovery=False)
 
         return self.status()
 
@@ -634,9 +694,7 @@ class CameraRecorderService:
             self._next_retry_at.clear()
             self._recovery_pending_since.clear()
 
-            recorders = list(
-                self._recorders.values()
-            )
+            recorders = list(self._recorders.values())
 
         for recorder in recorders:
             recorder.stop()
@@ -668,82 +726,65 @@ class CameraRecorderService:
             desired_running = self._desired_running
 
             for camera in settings.cameras:
-                recorder = self._recorders.get(
-                    camera.key
-                )
+                entry = self._slot_status(camera, "cloud")
+                entry["enabled"] = camera.enabled
 
-                restart_count = (
-                    self._restart_counts.get(
-                        camera.key,
-                        0,
-                    )
-                )
-
-                if recorder is None:
-                    camera_statuses.append(
-                        {
-                            "key": camera.key,
-                            "name": camera.name,
-                            "host": camera.host,
-                            "source_type": camera.source_type,
-                            "enabled": camera.enabled,
-                            "running": False,
-                            "last_error": None,
-                            "current_fragment": None,
-                            "last_completed_fragment": None,
-                            "stream_connected": False,
-                            "stream_reconnect_count": 0,
-                            "last_stream_error": None,
-                            "restart_count": restart_count,
-                        }
-                    )
-
+                if "archive" in self._roles_for(camera, settings):
+                    entry["archive"] = self._slot_status(camera, "archive")
                 else:
-                    recorder_status = (
-                        recorder.status()
-                    )
+                    entry["archive"] = None
 
-                    recorder_status["enabled"] = (
-                        camera.enabled
-                    )
-
-                    recorder_status[
-                        "restart_count"
-                    ] = restart_count
-
-                    camera_statuses.append(
-                        recorder_status
-                    )
+                camera_statuses.append(entry)
 
         return {
-            "gstreamer_available": (
-                Gst is not None
-            ),
+            "gstreamer_available": Gst is not None,
             "gstreamer_error": (
-                None
-                if GST_IMPORT_ERROR is None
-                else str(GST_IMPORT_ERROR)
+                None if GST_IMPORT_ERROR is None else str(GST_IMPORT_ERROR)
             ),
             "ffmpeg_available": FFMPEG_BINARY is not None,
-            "recording_enabled": (
-                settings.recording_enabled
-            ),
-            "desired_running": (
-                desired_running
-            ),
-            "recording_directory": (
-                settings.recording_directory
-            ),
+            "recording_enabled": settings.recording_enabled,
+            "desired_running": desired_running,
+            "recording_directory": settings.recording_directory,
             "recorder_restart_delay_seconds": (
                 settings.recorder_restart_delay_seconds
             ),
+            "archive_enabled": settings.archive_enabled,
             "cameras": camera_statuses,
         }
 
+    def _slot_status(self, camera: CameraConfig, role: str) -> dict:
+        key = self._slot_key(camera, role)
+        recorder = self._recorders.get(key)
+        restart_count = self._restart_counts.get(key, 0)
+
+        if recorder is None:
+            return {
+                "key": camera.key,
+                "name": camera.name,
+                "role": role,
+                "host": camera.host,
+                "source_type": camera.source_type,
+                "running": False,
+                "last_error": None,
+                "current_fragment": None,
+                "last_completed_fragment": None,
+                "stream_connected": False,
+                "stream_reconnect_count": 0,
+                "last_stream_error": None,
+                "restart_count": restart_count,
+            }
+
+        recorder_status = recorder.status()
+        recorder_status.setdefault("role", role)
+        recorder_status["restart_count"] = restart_count
+        return recorder_status
+
+    # ------------------------------------------------------------------
+    # Supervision
+    # ------------------------------------------------------------------
+
     def _supervisor_loop(self) -> None:
-        LOGGER.info(
-            "Camera recorder supervisor started"
-        )
+        LOGGER.info("Camera recorder supervisor started")
 
         while not self._shutdown_event.is_set():
             try:
@@ -751,17 +792,14 @@ class CameraRecorderService:
 
             except Exception:
                 LOGGER.exception(
-                    "Unexpected camera recorder "
-                    "supervisor error"
+                    "Unexpected camera recorder supervisor error"
                 )
 
             self._shutdown_event.wait(
                 timeout=self.SUPERVISOR_CHECK_SECONDS
             )
 
-        LOGGER.info(
-            "Camera recorder supervisor stopped"
-        )
+        LOGGER.info("Camera recorder supervisor stopped")
 
     def _supervise_once(self) -> None:
         with self._lock:
@@ -771,58 +809,30 @@ class CameraRecorderService:
         settings = self._settings_service.get()
         now = monotonic()
 
-        for camera in settings.cameras:
-            if not camera.enabled:
-                continue
+        for camera, role in self._slots(settings):
+            key = self._slot_key(camera, role)
+            label = f"{camera.name} ({role})"
 
             with self._lock:
-                recorder = self._recorders.get(
-                    camera.key
-                )
+                recorder = self._recorders.get(key)
+                next_retry = self._next_retry_at.get(key)
+                recovery_pending_since = self._recovery_pending_since.get(key)
 
-                next_retry = self._next_retry_at.get(
-                    camera.key
-                )
-
-                recovery_pending_since = (
-                    self._recovery_pending_since.get(
-                        camera.key
-                    )
-                )
-
-            running = (
-                recorder is not None
-                and recorder.status()["running"]
-            )
+            running = recorder is not None and recorder.status()["running"]
 
             if running:
                 if (
                     recovery_pending_since is not None
-                    and (
-                        now - recovery_pending_since
-                        >= self.RECOVERY_CONFIRM_SECONDS
-                    )
+                    and now - recovery_pending_since
+                    >= self.RECOVERY_CONFIRM_SECONDS
                 ):
                     with self._lock:
-                        self._recovery_pending_since.pop(
-                            camera.key,
-                            None,
+                        self._recovery_pending_since.pop(key, None)
+                        self._restart_counts[key] = (
+                            self._restart_counts.get(key, 0) + 1
                         )
 
-                        self._restart_counts[
-                            camera.key
-                        ] = (
-                            self._restart_counts.get(
-                                camera.key,
-                                0,
-                            )
-                            + 1
-                        )
-
-                    LOGGER.info(
-                        "Camera recorder recovered: %s",
-                        camera.name,
-                    )
+                    LOGGER.info("Camera recorder recovered: %s", label)
 
                 continue
 
@@ -830,23 +840,16 @@ class CameraRecorderService:
             # before remaining healthy long enough to confirm it.
             if recovery_pending_since is not None:
                 with self._lock:
-                    self._recovery_pending_since.pop(
-                        camera.key,
-                        None,
-                    )
-
-                    self._next_retry_at[
-                        camera.key
-                    ] = (
-                        now
-                        + settings.recorder_restart_delay_seconds
+                    self._recovery_pending_since.pop(key, None)
+                    self._next_retry_at[key] = (
+                        now + settings.recorder_restart_delay_seconds
                     )
 
                 LOGGER.warning(
                     "Camera recorder recovery failed; "
                     "retrying in %s seconds: %s",
                     settings.recorder_restart_delay_seconds,
-                    camera.name,
+                    label,
                 )
 
                 continue
@@ -855,18 +858,15 @@ class CameraRecorderService:
             # Start the configured retry timer.
             if next_retry is None:
                 with self._lock:
-                    self._next_retry_at[
-                        camera.key
-                    ] = (
-                        now
-                        + settings.recorder_restart_delay_seconds
+                    self._next_retry_at[key] = (
+                        now + settings.recorder_restart_delay_seconds
                     )
 
                 LOGGER.warning(
                     "Camera recorder is not running; "
                     "retrying in %s seconds: %s",
                     settings.recorder_restart_delay_seconds,
-                    camera.name,
+                    label,
                 )
 
                 continue
@@ -874,79 +874,64 @@ class CameraRecorderService:
             if now < next_retry:
                 continue
 
-            LOGGER.warning(
-                "Attempting camera recorder recovery: %s",
-                camera.name,
-            )
+            LOGGER.warning("Attempting camera recorder recovery: %s", label)
 
-            self._start_camera(
-                camera,
-                settings,
-                is_recovery=True,
-            )
+            self._start_slot(camera, role, settings, is_recovery=True)
 
-    def _start_camera(
+    def _start_slot(
         self,
         camera: CameraConfig,
+        role: str,
         settings: CameraSettings,
         *,
         is_recovery: bool,
     ) -> None:
-        with self._lock:
-            existing = self._recorders.get(
-                camera.key
-            )
+        key = self._slot_key(camera, role)
 
-            if (
-                existing is not None
-                and existing.status()["running"]
-            ):
+        with self._lock:
+            existing = self._recorders.get(key)
+
+            if existing is not None and existing.status()["running"]:
                 return
 
-            recorder_class = (
-                RtspFfmpegRecorder
-                if camera.source_type == "rtsp"
-                else CameraRecorder
-            )
+            if role == "archive":
+                recorder = RtspFfmpegRecorder(
+                    camera,
+                    settings,
+                    on_fragment_closed=self._archive_service.submit,
+                    role="archive",
+                )
+            elif camera.source_type == "rtsp":
+                recorder = RtspFfmpegRecorder(
+                    camera,
+                    settings,
+                    on_fragment_closed=self._upload_service.submit,
+                    role="cloud",
+                )
+            else:
+                recorder = CameraRecorder(
+                    camera,
+                    settings,
+                    on_fragment_closed=self._upload_service.submit,
+                )
 
-            recorder = recorder_class(
-                camera,
-                settings,
-                on_fragment_closed=(
-                    self._upload_service.submit
-                ),
-            )
-
-            self._recorders[camera.key] = (
-                recorder
-            )
+            self._recorders[key] = recorder
 
         try:
             recorder.start()
 
         except Exception:
-            LOGGER.exception(
-                "Unable to start recorder: %s",
-                camera.name,
-            )
+            LOGGER.exception("Unable to start recorder: %s (%s)", camera.name, role)
 
             with self._lock:
-                self._next_retry_at[
-                    camera.key
-                ] = (
-                    monotonic()
-                    + settings.recorder_restart_delay_seconds
+                self._next_retry_at[key] = (
+                    monotonic() + settings.recorder_restart_delay_seconds
                 )
 
             return
 
         with self._lock:
-            self._next_retry_at.pop(
-                camera.key,
-                None,
-            )
+            self._next_retry_at.pop(key, None)
 
             if is_recovery:
-                self._recovery_pending_since[
-                    camera.key
-                ] = monotonic()
+                self._recovery_pending_since[key] = monotonic()

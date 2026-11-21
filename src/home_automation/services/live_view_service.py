@@ -89,9 +89,8 @@ class LiveViewService:
                     "name": camera.name,
                     "enabled": camera.enabled,
                     "source_type": camera.source_type,
-                    # "sub" when a separate live stream URL is set,
-                    # "main" when live view falls back to the recording
-                    # stream, "none" for cameras go2rtc cannot serve.
+                    # "main" for RTSP cameras, "none" for cameras go2rtc
+                    # cannot serve.
                     "live_source": source,
                     "loaded": (
                         loaded is not None and camera.key in loaded
@@ -144,11 +143,10 @@ class LiveViewService:
 
     @staticmethod
     def _live_source(camera: CameraConfig) -> str:
+        # Live view always shows the main stream; the sub stream is
+        # reserved for the small cloud copy.
         if camera.source_type != "rtsp":
             return "none"
-
-        if camera.live_stream_url.strip():
-            return "sub"
 
         if camera.stream_url.strip():
             return "main"
@@ -157,14 +155,10 @@ class LiveViewService:
 
     @classmethod
     def _live_url(cls, camera: CameraConfig) -> str | None:
-        source = cls._live_source(camera)
-
-        if source == "sub":
-            url = camera.live_stream_url.strip()
-        elif source == "main":
-            url = camera.stream_url.strip()
-        else:
+        if cls._live_source(camera) != "main":
             return None
+
+        url = camera.stream_url.strip()
 
         # Two-way audio is never used; some cameras misbehave when
         # go2rtc asks for it.

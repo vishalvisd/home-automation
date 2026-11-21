@@ -25,6 +25,7 @@ from home_automation.services.backblaze_credentials_service import (
     BackblazeCredentialsService,
 )
 from home_automation.services.live_view_service import LiveViewService
+from home_automation.services.archive_service import ArchiveService
 from home_automation.services.cloud_rotation_service import (
     CloudRotationService,
 )
@@ -87,3 +88,9 @@ def get_cloud_rotation_service(
     request: Request,
 ) -> CloudRotationService:
     return request.app.state.cloud_rotation_service
+
+
+def get_archive_service(
+    request: Request,
+) -> ArchiveService:
+    return request.app.state.archive_service
