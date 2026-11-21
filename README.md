@@ -168,6 +168,7 @@ home-automation/
 ├── scripts/
 │   ├── setup_pi.sh             # Fresh Pi setup
 │   ├── update_pi.sh            # Normal safe deployment/update
+│   ├── install_service.sh      # Writes the systemd unit (called by setup, rerun when it changes)
 │   ├── install_go2rtc.sh       # One-time go2rtc install for live view
 │   ├── install_archive.sh      # One-time USB archive disk setup
 │   ├── find_camera.py          # Desk tool: find a camera on the LAN, get its RTSP URL

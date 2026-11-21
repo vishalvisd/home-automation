@@ -10,7 +10,6 @@ RUN_GROUP="$(id -gn)"
 USER_HOME="${HOME}"
 
 UV_BIN="${USER_HOME}/.local/bin/uv"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 
 if [[ "${EUID}" -eq 0 ]]; then
@@ -116,44 +115,7 @@ echo "ffmpeg OK."
 echo
 echo "[5/5] Installing boot service..."
 
-sudo tee "${SERVICE_FILE}" >/dev/null <<EOF
-[Unit]
-Description=Home Automation
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-
-User=${RUN_USER}
-Group=${RUN_GROUP}
-
-WorkingDirectory=${PROJECT_DIR}
-
-Environment=HOME=${USER_HOME}
-Environment=PYTHONUNBUFFERED=1
-
-ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn home_automation.api.app:app --host 0.0.0.0 --port 8000
-
-Restart=always
-RestartSec=5
-
-# Only the Python process gets the stop signal. The backend then stops
-# each ffmpeg itself with one interrupt, so ffmpeg can finish writing
-# the clip it is on. With the default KillMode systemd signals ffmpeg
-# too, and a second signal makes ffmpeg abort mid-write.
-KillMode=mixed
-
-TimeoutStopSec=120
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-
-sudo systemctl daemon-reload
-sudo systemctl enable "${SERVICE_NAME}"
-sudo systemctl restart "${SERVICE_NAME}"
+bash "${PROJECT_DIR}/scripts/install_service.sh"
 
 
 echo
