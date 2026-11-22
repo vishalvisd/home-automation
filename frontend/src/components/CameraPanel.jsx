@@ -48,6 +48,25 @@ function nextCameraKey(cameras) {
 }
 
 
+const SECTIONS = [
+  ["cameras", "Cameras"],
+  ["disk", "Disk copy"],
+  ["cloud", "Cloud (Backblaze)"],
+  ["settings", "Recording settings"],
+];
+
+const SECTION_STORAGE_KEY = "cctvSection";
+
+function loadSection() {
+  try {
+    const stored = localStorage.getItem(SECTION_STORAGE_KEY);
+    return SECTIONS.some(([key]) => key === stored) ? stored : "cameras";
+  } catch {
+    return "cameras";
+  }
+}
+
+
 export default function CameraPanel() {
   const [settings, setSettings] = useState(null);
   const [status, setStatus] = useState(null);
@@ -64,6 +83,7 @@ export default function CameraPanel() {
   // Result of the last Test per account row, keyed by row index.
   const [accountTests, setAccountTests] = useState({});
   const [archive, setArchive] = useState(null);
+  const [section, setSection] = useState(() => loadSection());
 
   async function loadSettings() {
     try {
@@ -220,6 +240,15 @@ export default function CameraPanel() {
         ...current,
         [index]: { ok: false, detail: requestError.message },
       }));
+    }
+  }
+
+  function chooseSection(value) {
+    setSection(value);
+    try {
+      localStorage.setItem(SECTION_STORAGE_KEY, value);
+    } catch {
+      // not remembered, that is all
     }
   }
 
@@ -410,6 +439,28 @@ export default function CameraPanel() {
         </div>
       </div>
 
+      <nav className="mt-6 overflow-x-auto" aria-label="CCTV sections">
+        <div className="flex min-w-max gap-1 rounded-2xl bg-slate-100 p-1" role="tablist">
+          {SECTIONS.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={section === key}
+              onClick={() => chooseSection(key)}
+              className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                section === key
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-600 hover:text-slate-950"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <div className={section === "settings" ? "" : "hidden"}>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <CapabilityCard
           label="GStreamer"
@@ -602,6 +653,9 @@ export default function CameraPanel() {
         </p>
       </div>
 
+      </div>
+
+      <div className={section === "disk" ? "" : "hidden"}>
       <div className="mt-6 rounded-2xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -789,6 +843,9 @@ export default function CameraPanel() {
         </p>
       </div>
 
+      </div>
+
+      <div className={section === "cloud" ? "" : "hidden"}>
       <div className="mt-6 rounded-2xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1040,6 +1097,9 @@ export default function CameraPanel() {
         </div>
       </div>
 
+      </div>
+
+      <div className={section === "cameras" ? "" : "hidden"}>
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-semibold text-slate-950">
           Cameras
@@ -1370,6 +1430,7 @@ export default function CameraPanel() {
         Camera changes take effect after Save Settings
         and the next recording start.
       </p>
+      </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
         <button
