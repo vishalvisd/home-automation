@@ -103,6 +103,12 @@ Keep a private copy of `runtime/cameras.json`,
 `runtime/backblaze_credentials.json` and `runtime/watering.json` somewhere
 safe to make that quick.
 
+### Settings outside the Pi
+
+Camera addresses, stream settings made on each camera's own web page and
+the router's DHCP bindings are listed in `docs/hardware-and-network.md`.
+A new Pi drive does not change them, but a replaced camera or router does.
+
 ### SSH from the development Mac
 
 The Mac holds a key in `~/.ssh/id_ed25519_pi` and a `Host pi` entry in

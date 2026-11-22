@@ -3,6 +3,31 @@
 Guidance for AI coding assistants working in this repository. The detailed
 architecture reference is `README.md`; read it first.
 
+## Read these first, in this order
+
+1. `docs/decisions.md`: what the owner has decided. Do not reopen these.
+2. `docs/hardware-and-network.md`: the devices, addresses, camera streams
+   and measured sizes as they are now.
+3. The newest file in `docs/context/`: where the last session stopped.
+4. `README.md` for the architecture, `SETUP_PI.md` for building a Pi.
+
+Keep them current. When a decision is made, a device changes or a manual
+step is added, update the matching file in the same piece of work. These
+documentation files may be edited without asking the owner first.
+
+## The rebuild rule
+
+If the Pi's system USB drive fails, a new drive must reach the same state
+quickly from this repository alone. So:
+
+- Code reaches the Pi only through git (`bash scripts/update_pi.sh`).
+- Anything else needed on the Pi is a script in `scripts/`, or a step
+  written in `SETUP_PI.md` under "Steps outside the update script".
+- Never give the owner a one-off command that changes the Pi without also
+  recording it there. A manual step that is not written down is a bug.
+- Settings made outside the Pi (camera web pages, router DHCP bindings)
+  go in `docs/hardware-and-network.md`.
+
 ## What this is
 
 A Raspberry Pi 4 home-automation and CCTV backend (FastAPI + Python 3.13,
@@ -21,6 +46,9 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   requirement, say so plainly instead of working around it quietly.
 - Flag hard-coded values (IP addresses, bucket names, hosts) rather than
   silently changing them.
+- Commands that run on the Pi are given to the owner to run; wait for the
+  output. One step at a time for hands-on work.
+- Never ask for or repeat a camera password or Backblaze key in chat.
 
 ## Workflow
 
@@ -79,6 +107,9 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   the archive to the boot pen drive.
 - No day limit. When free space falls under `archive_min_free_gb` the
   oldest day is deleted in one go.
+- No size limit may drop a waiting clip. A clip is dropped only when the
+  RAM disk is nearly full (`archive_buffer_reserve_mb`), oldest clip of
+  all cameras first. `archive_buffer_limit_mb` only starts a batch early.
 - Setup is `scripts/install_archive.sh` (fstab `noauto,user`, sudoers
   for park and SMART, persistent journal).
 
