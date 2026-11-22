@@ -729,7 +729,7 @@ export default function CameraPanel() {
           />
 
           <NumberSetting
-            label="RAM buffer limit"
+            label="Start a batch early when this much waits in RAM"
             value={settings.archive_buffer_limit_mb}
             suffix="MB"
             min={50}
@@ -739,7 +739,17 @@ export default function CameraPanel() {
           />
 
           <NumberSetting
-            label="Keep at least this much free"
+            label="Keep free in RAM (clips are dropped only below this)"
+            value={settings.archive_buffer_reserve_mb}
+            suffix="MB"
+            min={50}
+            onChange={(value) =>
+              updateSetting("archive_buffer_reserve_mb", value)
+            }
+          />
+
+          <NumberSetting
+            label="Keep at least this much free on the disk"
             value={settings.archive_min_free_gb}
             suffix="GB"
             min={1}
@@ -774,6 +784,14 @@ export default function CameraPanel() {
                   {archive.waiting_files} clip(s), {archive.waiting_mb} MB
                 </span>
               </div>
+              {archive.ram_free_mb != null && (
+                <div>
+                  RAM disk free:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {archive.ram_free_mb} MB
+                  </span>
+                </div>
+              )}
               <div>
                 Last batch:{" "}
                 <span className="font-semibold text-slate-800">

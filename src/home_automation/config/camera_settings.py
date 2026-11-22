@@ -117,7 +117,18 @@ class CameraSettings(BaseModel):
     archive_buffer_directory: str = "/dev/shm/home-automation/archive"
     archive_min_free_gb: int = Field(default=20, ge=1)
     archive_flush_minutes: int = Field(default=30, ge=1)
+
+    # A batch starts early, before archive_flush_minutes, when the
+    # waiting clips reach this size. It never causes a clip to be
+    # dropped.
     archive_buffer_limit_mb: int = Field(default=800, ge=50)
+
+    # Free space to keep in the RAM disk (/dev/shm) for the clips
+    # still being recorded. A waiting clip is dropped only when the
+    # RAM disk has less than this left, which needs the USB disk to be
+    # away or failing for a long time. A batch also starts early when
+    # less than twice this is left.
+    archive_buffer_reserve_mb: int = Field(default=250, ge=50)
 
     # Backblaze B2 upload. Accounts and buckets live in
     # runtime/backblaze_credentials.json; uploads rotate between the

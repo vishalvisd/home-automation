@@ -58,14 +58,20 @@ class ArchiveService:
     Keep the main-stream clips on a USB disk that rests between batches.
 
     Finished clips arrive from the archive recorders into RAM. Every
-    archive_flush_minutes, or sooner when the RAM buffer passes its
-    limit, one batch runs: mount the disk (which spins it up), move
-    every waiting clip to camN/YYYY/MM/DD/ with the same name the cloud
-    copy has, free space by deleting the oldest day when needed, read
-    the disk's SMART counters, unmount, and park the disk.
+    archive_flush_minutes one batch runs: mount the disk (which spins
+    it up), move every waiting clip, oldest first, to camN/YYYY/MM/DD/
+    with the same name the cloud copy has, free space by deleting the
+    oldest day when needed, read the disk's SMART counters, unmount,
+    and park the disk.
 
-    If the disk is absent the clips wait in RAM up to the buffer limit;
-    beyond it the oldest waiting clips are dropped so RAM never fills.
+    A batch starts early when the waiting clips reach
+    archive_buffer_limit_mb, or when the RAM disk has less than twice
+    archive_buffer_reserve_mb free.
+
+    A waiting clip is dropped only when the RAM disk itself is nearly
+    full (less than archive_buffer_reserve_mb free), never because of
+    a size limit. That needs the disk to be away or failing for a long
+    time. The oldest clip of all cameras goes first.
     """
 
     def __init__(
@@ -159,11 +165,20 @@ class ArchiveService:
             # Different filesystem would be a configuration mistake.
             shutil.move(str(file_path), str(destination))
 
-        waiting_bytes = self._enforce_buffer_limit(
-            settings.archive_buffer_limit_mb * 1024 * 1024
+        reserve_bytes = settings.archive_buffer_reserve_mb * 1024 * 1024
+
+        self._drop_oldest_if_ram_full(reserve_bytes)
+
+        waiting_bytes = sum(
+            self._size(path) for path in self._pending_files()
         )
 
-        if waiting_bytes >= settings.archive_buffer_limit_mb * 1024 * 1024 * 0.9:
+        # Start a batch early: enough is waiting, or RAM is getting
+        # short. Neither drops anything.
+        if (
+            waiting_bytes >= settings.archive_buffer_limit_mb * 1024 * 1024
+            or self._ram_free_bytes() < 2 * reserve_bytes
+        ):
             self._wake.set()
 
     def flush(self, reason: str = "manual") -> dict:
@@ -297,7 +312,7 @@ class ArchiveService:
 
         return {
             "waiting_files": len(waiting),
-            "waiting_bytes": sum(path.stat().st_size for path in waiting),
+            "waiting_bytes": sum(self._size(path) for path in waiting),
             "stored_ok": stats.get("stored_ok", 0),
             "stored_failed": stats.get("stored_failed", 0),
             "dropped": stats.get("dropped", 0),
@@ -330,9 +345,11 @@ class ArchiveService:
                 "parked": self._parked,
                 "waiting_files": len(files),
                 "waiting_mb": round(
-                    sum(path.stat().st_size for path in files) / 1e6, 1
+                    sum(self._size(path) for path in files) / 1e6, 1
                 ),
                 "buffer_limit_mb": settings.archive_buffer_limit_mb,
+                "buffer_reserve_mb": settings.archive_buffer_reserve_mb,
+                "ram_free_mb": round(self._ram_free_bytes() / 1024 / 1024),
                 "flush_minutes": settings.archive_flush_minutes,
                 "last_flush_at": (
                     self._last_flush_at.isoformat()
@@ -659,31 +676,59 @@ class ArchiveService:
             directory.mkdir(parents=True, exist_ok=True)
             return []
 
+        # Oldest clip first, whichever camera it came from. The waiting
+        # name starts with the camera key, so sorting by name alone
+        # would put every cam1 clip before any cam2 clip.
         return sorted(
             (path for path in directory.iterdir() if path.is_file()),
-            key=lambda path: path.name,
+            key=lambda path: (
+                self._clip_time(path.name.replace("__", "/")),
+                path.name,
+            ),
         )
 
-    def _enforce_buffer_limit(self, limit_bytes: int) -> int:
-        files = self._pending_files()
-        total = sum(path.stat().st_size for path in files)
+    @staticmethod
+    def _size(path: Path) -> int:
+        # A batch may move a clip away while we look at it.
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
 
-        for path in files:
-            if total <= limit_bytes:
-                break
+    def _ram_free_bytes(self) -> int:
+        """Free space in the RAM disk that holds the waiting clips."""
 
-            size = path.stat().st_size
+        directory = self._pending_directory()
+
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            return shutil.disk_usage(directory).free
+        except OSError:
+            # Cannot tell; never drop clips on a guess.
+            return 2**62
+
+    def _drop_oldest_if_ram_full(self, reserve_bytes: int) -> None:
+        """
+        The last resort. Clips are dropped only when the RAM disk is
+        nearly full, so the recorders can keep writing. With a working
+        disk a batch empties the buffer long before this.
+        """
+
+        if self._ram_free_bytes() >= reserve_bytes:
+            return
+
+        for path in self._pending_files():
             path.unlink(missing_ok=True)
-            total -= size
             self._note(path.name.split("__", 1)[0], **{"+dropped": 1})
 
             LOGGER.warning(
-                "Disk copy buffer full and the disk is unavailable; "
-                "dropped waiting clip %s",
+                "RAM is nearly full and the disk has not taken the "
+                "waiting clips; dropped the oldest one: %s",
                 path.name,
             )
 
-        return total
+            if self._ram_free_bytes() >= reserve_bytes:
+                break
 
     def _set_error(self, message: str) -> None:
         with self._lock:

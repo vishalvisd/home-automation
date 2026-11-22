@@ -951,11 +951,12 @@ in code and settings names). The cloud copy is the backup for when the
 Pi or the disk is destroyed. The disk is a laptop drive, so it
 is not left spinning: clips are buffered in RAM
 (archive_buffer_directory, under /dev/shm) and moved to the disk in
-batches, every archive_flush_minutes or sooner when the buffer passes
-archive_buffer_limit_mb. One batch is:
+batches, every archive_flush_minutes. A batch starts early when the
+waiting clips reach archive_buffer_limit_mb, or when the RAM disk has less
+than twice archive_buffer_reserve_mb free. One batch is:
 
 mount the disk (this spins it up)
-  -> copy every waiting clip to <archive_directory>/camN/YYYY/MM/DD/,
+  -> copy every waiting clip, oldest first, to <archive_directory>/camN/YYYY/MM/DD/,
      same file names as the cloud copy, fsync, verify size, delete from RAM
   -> while free space < archive_min_free_gb: delete the oldest day
      (all cameras) in one go
@@ -963,9 +964,14 @@ mount the disk (this spins it up)
   -> sync, unmount, park the disk (hdparm -y)
 
 There is no day limit; the disk fills and the oldest day goes. If the disk
-is unplugged or will not mount, clips wait in RAM up to the buffer limit and
-the oldest waiting clip is dropped beyond it, so RAM never fills. On a
-clean shutdown a final batch runs so waiting clips are not lost.
+is unplugged or will not mount, clips keep waiting in RAM. No size limit
+drops them: a waiting clip is dropped only when the RAM disk itself has
+less than archive_buffer_reserve_mb free, so the recorders can keep
+writing. The oldest clip of all cameras goes first. With a working disk
+this never happens. On a clean shutdown a final batch runs so waiting
+clips are not lost. A sudden power loss does lose the clips waiting in
+RAM (up to one batch interval of the disk copy); the cloud copy of that
+time remains.
 
 One-time Pi setup: scripts/install_archive.sh. It rewrites the /etc/fstab
 line for /mnt/cctv with "noauto,user" (not mounted at boot, the service
