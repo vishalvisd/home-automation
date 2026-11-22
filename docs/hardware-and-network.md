@@ -90,11 +90,13 @@ Daily sizes, measured. Update when a camera or bitrate changes.
 | cam1 Trueview | about 8.5 GB | about 2.1 GB (94 MB an hour by day, 77 at night) |
 | cam2 Tekzor | about 5 GB (160 MB an hour by day, 290 at night) | about 2.8 GB (124 MB an hour by day, 110 at night) |
 | cam3 Hikvision | about 15 GB | about 2.4 GB (107 MB an hour by day, 93 at night) |
-| cam4 BlueView, as delivered, night figures only | about 23 GB (47 MB per 3 min on the Pi) | 1.2 to 3.0 GB seen so far; the sub stream maximum should be 192 kbps so it cannot pass about 2.3 GB |
+| cam4 BlueView, night figures only | about 22 GB (935 MB an hour) | about 1.05 GB (43 MB an hour) after the owner tuned the sub stream on 22 Nov 2026 |
 
 The cloud figures for cam1 to cam3 are from the hourly counters of
 22 Nov 2026 and add up to about 7.3 GB a day. That leaves about 2.7 GB
-for cam4, so its sub stream is set to about 192 kbps.
+for cam4. Night of 22 to 23 Nov with all four cameras: about 283 MB an
+hour to the cloud (about 6.8 GB a day at the night rate) and about
+2.1 GB an hour to the disk (one 30-minute batch is about 1.07 GB).
 
 RAM: the Pi has 3.8 GB; `/dev/shm` (the RAM disk) is 1.9 GB. With four
 cameras one 30-minute batch is up to about 1.1 GB of waiting clips.
