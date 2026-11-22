@@ -73,16 +73,33 @@ if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
 fi
 
 
-if ! curl \
-    --fail \
-    --silent \
-    --show-error \
-    --max-time 5 \
-    http://127.0.0.1:8000/health \
-    >/dev/null; then
+# The app needs a few seconds after the service starts before it
+# answers. Ask once a second, for up to a minute, before calling it
+# a failure.
+HEALTH_URL="http://127.0.0.1:8000/health"
+HEALTH_WAIT_SECONDS=60
+healthy=0
 
+for _ in $(seq 1 "${HEALTH_WAIT_SECONDS}"); do
+    if curl \
+        --fail \
+        --silent \
+        --max-time 5 \
+        "${HEALTH_URL}" \
+        >/dev/null 2>&1; then
+
+        healthy=1
+        break
+    fi
+
+    sleep 1
+done
+
+
+if [[ "${healthy}" -ne 1 ]]; then
     echo
-    echo "ERROR: Home Automation health check failed."
+    echo "ERROR: Home Automation did not answer on ${HEALTH_URL}"
+    echo "       within ${HEALTH_WAIT_SECONDS} seconds."
     echo
     sudo journalctl \
         -u "${SERVICE_NAME}" \
