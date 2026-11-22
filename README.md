@@ -973,6 +973,20 @@ clips are not lost. A sudden power loss does lose the clips waiting in
 RAM (up to one batch interval of the disk copy); the cloud copy of that
 time remains.
 
+Disk activity log (a study, off by default). To see how much rest the
+disk really gets, switch on "Log disk activity" in the Disk copy tab
+(setting archive_activity_log_enabled). While it is on, every wake
+(with its reason: timer, size, low_ram, shutdown, manual, browse), every
+batch (clips, MB, the disk's own Start_Stop_Count and Load_Cycle_Count)
+and every park (with how long the disk was awake) is appended to
+runtime/disk_activity.csv, a few hundred small lines a day. Every five
+minutes between batches the disk is also asked whether it is asleep
+(smartctl -n standby, which does not wake it) and the answer is written
+when it changes, so a disk that wakes by itself shows up.
+GET /api/cameras/archive/activity returns the lines and a summary per
+day. Switch the setting off when the study is over; the file can then
+be deleted.
+
 One-time Pi setup: scripts/install_archive.sh. It rewrites the /etc/fstab
 line for /mnt/cctv with "noauto,user" (not mounted at boot, the service
 user may mount it), adds a sudoers rule for exactly the park and SMART

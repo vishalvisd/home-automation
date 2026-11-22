@@ -61,6 +61,17 @@ reached. This file is the current state.
 | No speed-up or time-lapse on the Pi | CPU; done in the downloader on the Mac |
 | The shared camera power relay is never restarted automatically | One failing camera must not cut the others |
 
+### Disk rest study (started 23 Nov 2026, temporary)
+
+The owner wants to see for a few days when the disk is woken, how long it
+runs and when it is parked. "Log disk activity" in the Disk copy tab writes
+this to `runtime/disk_activity.csv` on the system drive (accepted for the
+length of the study). `GET /api/cameras/archive/activity` gives the lines
+and a summary per day. When the analysis is done the switch is turned off;
+the code stays, the file can be deleted. If the sleep check finds the disk
+awake by itself, it is only written down, not parked again: what to do
+about it is the owner's decision once there is data.
+
 ## Cloud accounts (Backblaze B2)
 
 | Decision | Reason |

@@ -748,6 +748,32 @@ export default function CameraPanel() {
             }
           />
 
+          <label className="rounded-2xl bg-slate-50 p-4">
+            <span className="text-sm font-medium text-slate-700">
+              Log disk activity (a study of how the disk rests)
+            </span>
+
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={Boolean(settings.archive_activity_log_enabled)}
+                onChange={(event) =>
+                  updateSetting(
+                    "archive_activity_log_enabled",
+                    event.target.checked,
+                  )
+                }
+                className="h-5 w-5"
+              />
+
+              <span className="text-sm">
+                {settings.archive_activity_log_enabled
+                  ? "On: every wake and park is written to a small file"
+                  : "Off"}
+              </span>
+            </div>
+          </label>
+
           <NumberSetting
             label="Keep at least this much free on the disk"
             value={settings.archive_min_free_gb}

@@ -13,6 +13,7 @@ from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
 from home_automation.services.clip_naming import LOCAL_TIME_ZONE, clip_key
+from home_automation.services.disk_activity_log import DiskActivityLog
 from home_automation.services.recording_stats_service import (
     RecordingStatsService,
 )
@@ -30,6 +31,10 @@ MOUNT_TIMEOUT_SECONDS = 60
 PARK_TIMEOUT_SECONDS = 30
 SMART_TIMEOUT_SECONDS = 30
 
+# While the disk activity log is on, ask the disk this often between
+# batches whether it is really asleep. The question does not wake it.
+SLEEP_CHECK_SECONDS = 300
+
 # SMART attributes worth showing. Anything non-zero in the first three
 # means the disk is wearing out.
 SMART_ATTRIBUTES = {
@@ -38,6 +43,7 @@ SMART_ATTRIBUTES = {
     "Offline_Uncorrectable": "uncorrectable_sectors",
     "Power_On_Hours": "power_on_hours",
     "Start_Stop_Count": "start_stop_count",
+    "Load_Cycle_Count": "load_cycle_count",
     "Temperature_Celsius": "temperature_c",
 }
 
@@ -78,9 +84,11 @@ class ArchiveService:
         self,
         settings_service: CameraSettingsService,
         stats_service: RecordingStatsService | None = None,
+        activity_log: DiskActivityLog | None = None,
     ) -> None:
         self._settings_service = settings_service
         self._stats_service = stats_service
+        self._activity_log = activity_log
         # Per camera, for the UI: when a clip last reached the disk and
         # how many have, since service start.
         self._camera_stats: dict[str, dict] = {}
@@ -96,6 +104,14 @@ class ArchiveService:
         self._disk: dict = {}
         self._smart: dict = {}
         self._parked = False
+
+        # For the disk activity log: when we last woke the disk
+        # (monotonic), why the next early batch was asked for, and the
+        # last answer of the sleep check.
+        self._awake_since: float | None = None
+        self._early_reason = "size"
+        self._sleep_state: str | None = None
+        self._last_sleep_check = monotonic()
 
         # Until when the disk must stay mounted for browsing (monotonic).
         self._browse_until = 0.0
@@ -113,6 +129,10 @@ class ArchiveService:
     def start(self) -> None:
         self._pending_directory().mkdir(parents=True, exist_ok=True)
         self._thread.start()
+        self._log_activity(
+            "service_start",
+            note="disk state not known until the first wake or check",
+        )
         LOGGER.info("Archive service started")
 
     def shutdown(self) -> None:
@@ -175,10 +195,11 @@ class ArchiveService:
 
         # Start a batch early: enough is waiting, or RAM is getting
         # short. Neither drops anything.
-        if (
-            waiting_bytes >= settings.archive_buffer_limit_mb * 1024 * 1024
-            or self._ram_free_bytes() < 2 * reserve_bytes
-        ):
+        if waiting_bytes >= settings.archive_buffer_limit_mb * 1024 * 1024:
+            self._early_reason = "size"
+            self._wake.set()
+        elif self._ram_free_bytes() < 2 * reserve_bytes:
+            self._early_reason = "low_ram"
             self._wake.set()
 
     def flush(self, reason: str = "manual") -> dict:
@@ -210,11 +231,10 @@ class ArchiveService:
             raise RuntimeError("Archive disk is not plugged in")
 
         with self._flush_lock:
-            self._mount(archive_root)
+            self._wake_disk(archive_root, "browse")
 
             with self._lock:
                 self._browse_until = monotonic() + BROWSE_IDLE_SECONDS
-                self._parked = False
 
         return archive_root
 
@@ -379,7 +399,7 @@ class ArchiveService:
                 last_run = monotonic()
 
                 try:
-                    self.flush(reason="timer" if due else "buffer")
+                    self.flush(reason="timer" if due else self._early_reason)
                 except Exception:
                     LOGGER.exception("Archive batch failed")
 
@@ -387,6 +407,11 @@ class ArchiveService:
                 self._park_if_browse_idle()
             except Exception:
                 LOGGER.exception("Archive park after browsing failed")
+
+            try:
+                self._check_sleep_if_due()
+            except Exception:
+                LOGGER.exception("Disk sleep check failed")
 
             self._stop.wait(timeout=CHECK_SECONDS)
 
@@ -406,8 +431,10 @@ class ArchiveService:
             "Archive batch starting (%s): %s clip(s)", reason, len(files)
         )
 
+        batch_started = monotonic()
+
         try:
-            self._mount(archive_root)
+            self._wake_disk(archive_root, reason)
         except Exception as error:
             self._set_error(f"Could not mount the archive disk: {error}")
             return
@@ -467,18 +494,57 @@ class ArchiveService:
                 moved_bytes / 1e6,
             )
 
+            with self._lock:
+                smart = dict(self._smart)
+
+            self._log_activity(
+                "batch",
+                reason=reason,
+                seconds=round(monotonic() - batch_started, 1),
+                clips=moved,
+                mb=round(moved_bytes / 1e6, 1),
+                start_stop_count=smart.get("start_stop_count"),
+                load_cycle_count=smart.get("load_cycle_count"),
+            )
+
         finally:
             with self._lock:
                 browsing = monotonic() < self._browse_until
 
             if browsing:
                 LOGGER.info("Archive disk stays awake: browsing in progress")
+                self._log_activity("stay_awake", note="downloader is browsing")
             else:
                 self._unmount_and_park(archive_root, settings.archive_disk_device)
 
     # ------------------------------------------------------------------
     # Disk handling
     # ------------------------------------------------------------------
+
+    def _wake_disk(self, archive_root: Path, reason: str) -> None:
+        """Mount the disk, which spins it up. Does nothing if it is awake."""
+
+        if os.path.ismount(archive_root):
+            return
+
+        started = monotonic()
+
+        try:
+            self._mount(archive_root)
+        except Exception as error:
+            self._log_activity("wake_failed", reason=reason, note=str(error)[:200])
+            raise
+
+        with self._lock:
+            self._parked = False
+            self._awake_since = started
+            self._sleep_state = None
+
+        self._log_activity(
+            "wake",
+            reason=reason,
+            seconds=round(monotonic() - started, 1),
+        )
 
     @staticmethod
     def _mount(archive_root: Path) -> None:
@@ -513,9 +579,14 @@ class ArchiveService:
                 )
 
                 if result.returncode != 0:
+                    message = (result.stderr or result.stdout).strip()
                     self._set_error(
-                        "Could not unmount the archive disk: "
-                        + (result.stderr or result.stdout).strip()
+                        "Could not unmount the archive disk: " + message
+                    )
+                    self._log_activity(
+                        "park",
+                        seconds=self._awake_seconds(),
+                        note=("unmount failed: " + message)[:200],
                     )
                     return
 
@@ -528,14 +599,25 @@ class ArchiveService:
                 check=False,
             )
 
+            awake_seconds = self._awake_seconds()
+
             with self._lock:
                 self._parked = result.returncode == 0
+                self._awake_since = None
+                self._sleep_state = None
+                # Give the disk a moment before the first sleep check.
+                self._last_sleep_check = monotonic()
 
             if result.returncode != 0:
-                self._set_error(
-                    "Could not park the archive disk: "
-                    + (result.stderr or result.stdout).strip()
+                message = (result.stderr or result.stdout).strip()
+                self._set_error("Could not park the archive disk: " + message)
+                self._log_activity(
+                    "park",
+                    seconds=awake_seconds,
+                    note=("park failed: " + message)[:200],
                 )
+            else:
+                self._log_activity("park", seconds=awake_seconds, note="ok")
 
         except Exception as error:
             self._set_error(f"Could not release the archive disk: {error}")
@@ -658,6 +740,113 @@ class ArchiveService:
 
         with self._lock:
             self._smart = values
+
+    # ------------------------------------------------------------------
+    # Disk activity log (a study of how the disk rests; off by default)
+    # ------------------------------------------------------------------
+
+    def _log_activity(self, event: str, **fields) -> None:
+        if self._activity_log is None:
+            return
+
+        if not self._settings_service.get().archive_activity_log_enabled:
+            return
+
+        self._activity_log.write(event, **fields)
+
+    def _awake_seconds(self) -> float | None:
+        with self._lock:
+            since = self._awake_since
+
+        return None if since is None else round(monotonic() - since, 1)
+
+    def _check_sleep_if_due(self) -> None:
+        """
+        Between batches, ask the disk whether it is asleep and write
+        the answer when it changes. smartctl's "-n standby" asks
+        without waking the disk. Only while the log is switched on.
+        """
+
+        settings = self._settings_service.get()
+
+        if (
+            self._activity_log is None
+            or not settings.archive_activity_log_enabled
+            or not settings.archive_enabled
+        ):
+            return
+
+        if monotonic() - self._last_sleep_check < SLEEP_CHECK_SECONDS:
+            return
+
+        if os.path.ismount(settings.archive_directory):
+            return
+
+        if not Path(settings.archive_disk_device).exists():
+            return
+
+        # Never get in the way of a batch or of browsing.
+        if not self._flush_lock.acquire(blocking=False):
+            return
+
+        try:
+            self._last_sleep_check = monotonic()
+
+            # scripts/install_archive.sh allows exactly this command.
+            result = subprocess.run(
+                [
+                    "sudo", "-n", "smartctl", "-d", "sat,16",
+                    "-n", "standby", "-i", settings.archive_disk_device,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=SMART_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except Exception as error:
+            state, note = "unknown", str(error)[:200]
+        else:
+            output = (result.stdout or "") + (result.stderr or "")
+            upper = output.upper()
+
+            if "STANDBY" in upper or "SLEEP" in upper:
+                state, note = "asleep", ""
+            elif "ACTIVE" in upper or "IDLE" in upper or result.returncode == 0:
+                state = "awake"
+                note = "nothing of ours woke the disk"
+            else:
+                state, note = "unknown", output.strip()[:200]
+        finally:
+            self._flush_lock.release()
+
+        with self._lock:
+            changed = state != self._sleep_state
+            self._sleep_state = state
+            parked = self._parked
+
+        if changed:
+            if state == "awake" and not parked:
+                note = "awake, and we have not parked it since the service started"
+
+            self._log_activity("check", reason=state, note=note)
+
+    def activity(self, limit: int = 2000) -> dict:
+        """The log's lines (newest last) and a summary per day."""
+
+        settings = self._settings_service.get()
+
+        if self._activity_log is None:
+            return {"enabled": False, "file": None, "days": [], "events": []}
+
+        events = self._activity_log.read()
+
+        return {
+            "enabled": settings.archive_activity_log_enabled,
+            "file": str(self._activity_log.path),
+            "lines": len(events),
+            "days": self._activity_log.summary(),
+            "events": events[-limit:],
+        }
 
     # ------------------------------------------------------------------
     # RAM buffer

@@ -130,6 +130,11 @@ class CameraSettings(BaseModel):
     # less than twice this is left.
     archive_buffer_reserve_mb: int = Field(default=250, ge=50)
 
+    # A study of how the USB disk rests. While on, every wake, batch
+    # and park of the disk, and a sleep check between batches, is
+    # written to runtime/disk_activity.csv. Switch it off when done.
+    archive_activity_log_enabled: bool = False
+
     # Backblaze B2 upload. Accounts and buckets live in
     # runtime/backblaze_credentials.json; uploads rotate between the
     # enabled accounts, one account per calendar day.

@@ -17,6 +17,7 @@ from home_automation.config.application import (
     CAMERA_PRESET_STATE_FILE,
     CAMERA_SETTINGS_FILE,
     CLOUD_ROTATION_STATE_FILE,
+    DISK_ACTIVITY_LOG_FILE,
     RECORDING_STATS_FILE,
     FRONTEND_DIST_DIRECTORY,
     GO2RTC_CONFIG_FILE,
@@ -28,6 +29,7 @@ from home_automation.config.application import (
 )
 from home_automation.config.logging import configure_logging
 from home_automation.services.archive_service import ArchiveService
+from home_automation.services.disk_activity_log import DiskActivityLog
 from home_automation.services.automation_script_service import (
     AutomationScriptService,
 )
@@ -134,6 +136,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     archive_service = ArchiveService(
         camera_settings_service,
         recording_stats_service,
+        DiskActivityLog(DISK_ACTIVITY_LOG_FILE),
     )
 
     camera_recorder_service = CameraRecorderService(

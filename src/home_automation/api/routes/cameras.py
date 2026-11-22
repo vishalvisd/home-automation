@@ -136,6 +136,19 @@ def archive_flush(
     return archive.flush(reason="manual")
 
 
+@router.get("/archive/activity")
+def archive_activity(
+    archive: ArchiveDependency,
+    limit: int = 2000,
+) -> dict:
+    """
+    The disk activity log (when the disk was woken and parked) with a
+    summary per day. Empty unless the study is switched on.
+    """
+
+    return archive.activity(limit=max(1, min(limit, 20000)))
+
+
 @router.get("/archive/cameras")
 def archive_cameras(archive: ArchiveDependency) -> list[str]:
     """Cameras with clips on the disk. Wakes the disk."""
