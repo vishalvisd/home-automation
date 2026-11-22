@@ -32,7 +32,7 @@ kept.
 | cam1 | Trueview T18296S, Wi-Fi | 192.168.1.33, router binding, MAC 80:1d:0d:94:2a:3b | `/ch0_0.264` 2304x1296 H.265 15 fps + G.711 a-law, about 19 MB per 3 min | `/ch0_1.264` 800x448 H.265, about 3 MB per 3 min |
 | cam2 | Tekzor TZ-1W-IP-NG5SL(ADP), wired, second-floor access point | 192.168.1.36, router binding, MAC 5a:5a:02:4e:f2:1d | `/live/0/MAIN` 2304x1296 H.265 + G.711 mu-law, 7 to 30 MB per 3 min | `/live/0/SUB` 640x360 H.264 10 fps CBR 256 kbps, about 5 MB per 3 min |
 | cam3 | Hikvision DS-2CD202RF-I, outdoor pole, 18 m Cat6 with passive 12 V injector | 192.168.1.64 static in the camera, MAC 94:e1:ac:de:95:6f | `/Streaming/Channels/101` 1920x1080 H.264 15 fps VBR max 1536 kbps, about 30 MB per 3 min, no audio hardware | `/Streaming/Channels/102` 704x576 H.264 10 fps VBR max 512 kbps, about 8 MB per 3 min |
-| cam4 | BlueView (looks like the Tekzor, different firmware), being commissioned 22 Nov 2026 | 192.168.1.113 static in the camera plus router binding, MAC 00:d5:0b:29:b5:5f | `/ch01.264?dev=1` 2560x1440 H.265 about 10 fps + G.711 mu-law. Measured as delivered, at night: 2.1 Mbit/s, about 48 MB per 3 min | `/ch01_sub.264?dev=1` 720x576 H.265 10 fps. Measured as delivered: about 0.3 Mbit/s, about 6.5 MB per 3 min |
+| cam4 | BlueView (looks like the Tekzor, different firmware), recording since 22 Nov 2026 21:00 | 192.168.1.113 static in the camera plus router binding, MAC 00:d5:0b:29:b5:5f | `/ch01.264?dev=1` 2560x1440 H.265 about 10 fps + G.711 mu-law. Measured as delivered, at night: 2.1 Mbit/s, about 48 MB per 3 min | `/ch01_sub.264?dev=1` 720x576 H.265 10 fps. The bitrate varies with the scene: measured 256 kbps at 20:06 and 104 kbps at 21:10 on 22 Nov, so 2.5 to 6.5 MB per 3 min |
 
 ### Per-camera notes
 
@@ -90,7 +90,7 @@ Daily sizes, measured. Update when a camera or bitrate changes.
 | cam1 Trueview | about 8.5 GB | about 2.1 GB (94 MB an hour by day, 77 at night) |
 | cam2 Tekzor | about 5 GB (160 MB an hour by day, 290 at night) | about 2.8 GB (124 MB an hour by day, 110 at night) |
 | cam3 Hikvision | about 15 GB | about 2.4 GB (107 MB an hour by day, 93 at night) |
-| cam4 BlueView, as delivered, measured once at night | about 23 GB | about 3.0 GB; target about 2.3 GB (sub stream 192 kbps) |
+| cam4 BlueView, as delivered, night figures only | about 23 GB (47 MB per 3 min on the Pi) | 1.2 to 3.0 GB seen so far; the sub stream maximum should be 192 kbps so it cannot pass about 2.3 GB |
 
 The cloud figures for cam1 to cam3 are from the hourly counters of
 22 Nov 2026 and add up to about 7.3 GB a day. That leaves about 2.7 GB
@@ -103,3 +103,11 @@ cameras one 30-minute batch is up to about 1.1 GB of waiting clips.
   account, so the daily cloud total should stay under 10 GB.
 - Backblaze price: 6.95 USD per TB per month, uploads free.
 - Upload limit on the Pi is shared by all cameras (`b2_upload_rate_kb_s`).
+
+## Restarting the backend
+
+A restart (`bash scripts/update_pi.sh` or `sudo systemctl restart
+home-automation`) stops every recorder, finishes the uploads and runs a
+last disk batch before the new process starts. On 22 Nov 2026 that took
+53 seconds, so every camera has a gap of about one minute. Restart only
+when needed.
