@@ -378,6 +378,9 @@ class RtspFfmpegRecorder:
             self._handle_process_exit(return_code)
 
     def _handle_segment_opened(self, path: Path) -> None:
+        # ffmpeg opens each new file itself; if the directory was removed
+        # under it, the open fails and ffmpeg exits, after which the
+        # supervisor restarts us and start() recreates the directory.
         with self._lock:
             previous = self._current_fragment
             self._current_fragment = str(path)

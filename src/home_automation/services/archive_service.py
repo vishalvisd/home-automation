@@ -136,7 +136,11 @@ class ArchiveService:
             "/", "__"
         )
 
-        destination = self._pending_directory() / pending_name
+        pending_directory = self._pending_directory()
+        # RAM directories can vanish (the whole /dev/shm tree was once
+        # emptied under us); never let that lose clips.
+        pending_directory.mkdir(parents=True, exist_ok=True)
+        destination = pending_directory / pending_name
 
         try:
             file_path.replace(destination)
@@ -577,6 +581,7 @@ class ArchiveService:
         directory = self._pending_directory()
 
         if not directory.is_dir():
+            directory.mkdir(parents=True, exist_ok=True)
             return []
 
         return sorted(
