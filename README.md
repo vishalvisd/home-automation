@@ -839,6 +839,13 @@ Segments are written under:
 
 /dev/shm/home-automation/cameras/<camera-key>/
 
+systemd-logind must not clean /dev/shm: with its default RemoveIPC=yes it
+deletes a user's files there when that user's last login ends, which wiped
+the whole recording tree whenever an SSH session to the Pi closed.
+scripts/install_service.sh sets RemoveIPC=no and enables linger for the
+service user. The archive service also recreates its buffer folder on
+demand, so a wipe costs at most the clips that were waiting.
+
 /dev/shm is RAM-backed temporary storage on Linux, avoiding normal continuous CCTV writes to the Raspberry Pi SD card.
 
 Do not treat this directory as persistent storage.

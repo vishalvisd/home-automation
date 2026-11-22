@@ -49,6 +49,8 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 ## CCTV rules that are deliberate
 
 - Recording goes to RAM (`/dev/shm`) on purpose, to spare the SD card.
+  `scripts/install_service.sh` sets logind `RemoveIPC=no` and linger for
+  the service user; without that, a logout wipes /dev/shm.
 - Each finished segment is uploaded to Backblaze B2 once, then deleted,
   whether or not the upload succeeded. There is no retry queue and no
   local backup. If uploads fall behind, the oldest waiting segment is

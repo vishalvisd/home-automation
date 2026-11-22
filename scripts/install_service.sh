@@ -69,6 +69,18 @@ EOF
 # the only source of truth.
 sudo rm -rf "/etc/systemd/system/${SERVICE_NAME}.service.d"
 
+# The backend keeps clips in RAM under /dev/shm as the service user.
+# By default systemd-logind deletes a user's shared memory (everything
+# of theirs under /dev/shm) the moment their last login ends, which
+# wiped the recording tree whenever an SSH session closed. Keep the
+# files: RemoveIPC=no, and keep the user's manager running (linger).
+echo "Keeping ${RUN_USER}'s /dev/shm files across logouts..."
+
+sudo mkdir -p /etc/systemd/logind.conf.d
+printf '[Login]\nRemoveIPC=no\n' | sudo tee /etc/systemd/logind.conf.d/home-automation.conf >/dev/null
+sudo systemctl restart systemd-logind
+sudo loginctl enable-linger "${RUN_USER}"
+
 sudo systemctl daemon-reload
 sudo systemctl enable "${SERVICE_NAME}"
 sudo systemctl restart "${SERVICE_NAME}"
