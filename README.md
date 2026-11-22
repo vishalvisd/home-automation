@@ -170,7 +170,7 @@ home-automation/
 │   ├── update_pi.sh            # Normal safe deployment/update
 │   ├── install_service.sh      # Writes the systemd unit (called by setup, rerun when it changes)
 │   ├── install_go2rtc.sh       # One-time go2rtc install for live view
-│   ├── install_archive.sh      # One-time USB archive disk setup
+│   ├── install_archive.sh      # One-time USB disk (disk copy) setup
 │   ├── find_camera.py          # Desk tool: find a camera on the LAN, get its RTSP URL
 │   └── test_relays.py          # Sequential relay hardware test
 ├── src/home_automation/
@@ -243,6 +243,7 @@ runtime/
 ├── backblaze_credentials.json
 ├── cloud_rotation_state.json
 ├── go2rtc.yaml
+├── recording_stats.json     hourly clip counters per camera and copy, written hourly
 └── automations/
     ├── restart_router.py
     ├── restart_cameras.py
@@ -564,8 +565,8 @@ rtsp          Commercial IP camera serving H.264/H.265 over RTSP. Uses stream_ur
               With the archive enabled an RTSP camera has two recorders:
               "cloud" records sub_stream_url (or stream_url when empty) with
               24 kbps mono audio and uploads each clip to Backblaze;
-              "archive" records stream_url with 32 kbps audio and keeps each
-              clip on the USB disk. Live view always shows stream_url.
+              "archive" (the disk copy, the primary recording) records stream_url
+              with 32 kbps audio and keeps each clip on the USB disk. Live view always shows stream_url.
 
 Both types run side by side. Cameras can be added and removed from the UI.
 The first commercial camera is a Trueview T18296S (H.265 2304x1296 @ 15 fps,
@@ -942,10 +943,12 @@ cam2/2026/08/16/20/cam_2_2026_08_16_20_23_41.ts
 
 Do not casually change this naming scheme because the downloader app in downloader/ (and previously a separate project) reads these objects and joins them into videos.
 
-Archive on the USB disk
+Disk copy on the USB disk (the primary recording)
 
 Full-quality clips of every RTSP camera's main stream are kept on a USB
-disk attached to the Pi (ArchiveService). The disk is a laptop drive, so it
+disk attached to the Pi (ArchiveService; the word "archive" survives only
+in code and settings names). The cloud copy is the backup for when the
+Pi or the disk is destroyed. The disk is a laptop drive, so it
 is not left spinning: clips are buffered in RAM
 (archive_buffer_directory, under /dev/shm) and moved to the disk in
 batches, every archive_flush_minutes or sooner when the buffer passes
@@ -1050,6 +1053,17 @@ Panel Cleaning and Plant Watering
 Automations
 
 Tab labels use non-wrapping text. On a narrow screen the tab row scrolls horizontally rather than breaking long labels such as Panel Cleaning and Plant Watering. The underlying panels remain mounted while hidden so their existing state, polling, and unsaved UI state are not discarded when switching tabs.
+
+Camera card status
+
+Each camera card shows two blocks, "Disk copy" (primary) and "Cloud copy"
+(backup), each with a traffic light, plain-language timings (clip started
+N minutes ago, last clip closed, last stored/uploaded, counters since
+service start) and a strip of 24 boxes for the last 24 hours, one per
+hour, coloured by how many clips reached that storage in that hour
+(RecordingStatsService; green >= 90 % of the expected count, yellow
+>= 50 %, red below, grey before the counters existed). All of it comes
+from memory; the only disk write is the hourly stats file.
 
 The React UI provides:
 

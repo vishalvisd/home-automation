@@ -69,8 +69,10 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - Do not auto-restart the shared camera power relay because one camera
   fails.
 
-## Archive disk rules that are deliberate
+## Disk copy rules that are deliberate
 
+- Call it the disk copy (the primary recording); the cloud is the backup.
+  "archive" survives only in code and settings names.
 - Main streams go to a USB laptop disk through `ArchiveService`: clips
   wait in RAM, move to the disk in batches, and the disk is parked
   (`hdparm -y`) between batches. Never leave it spinning; never write

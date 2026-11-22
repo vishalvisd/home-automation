@@ -13,6 +13,9 @@ from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
 from home_automation.services.clip_naming import LOCAL_TIME_ZONE, clip_key
+from home_automation.services.recording_stats_service import (
+    RecordingStatsService,
+)
 
 
 LOGGER = logging.getLogger("home_automation")
@@ -65,8 +68,16 @@ class ArchiveService:
     beyond it the oldest waiting clips are dropped so RAM never fills.
     """
 
-    def __init__(self, settings_service: CameraSettingsService) -> None:
+    def __init__(
+        self,
+        settings_service: CameraSettingsService,
+        stats_service: RecordingStatsService | None = None,
+    ) -> None:
         self._settings_service = settings_service
+        self._stats_service = stats_service
+        # Per camera, for the UI: when a clip last reached the disk and
+        # how many have, since service start.
+        self._camera_stats: dict[str, dict] = {}
         self._lock = RLock()
         self._flush_lock = RLock()
         self._wake = Event()
@@ -269,6 +280,42 @@ class ArchiveService:
     # Status
     # ------------------------------------------------------------------
 
+    def camera_status(self, camera_key: str) -> dict:
+        """Disk-copy state of one camera for the UI."""
+
+        prefix = f"{camera_key}__"
+        waiting = [path for path in self._pending_files() if path.name.startswith(prefix)]
+
+        with self._lock:
+            stats = dict(self._camera_stats.get(camera_key, {}))
+            last_flush_at = (
+                self._last_flush_at.isoformat(timespec="seconds")
+                if self._last_flush_at
+                else None
+            )
+            last_error = self._last_error
+
+        return {
+            "waiting_files": len(waiting),
+            "waiting_bytes": sum(path.stat().st_size for path in waiting),
+            "stored_ok": stats.get("stored_ok", 0),
+            "stored_failed": stats.get("stored_failed", 0),
+            "dropped": stats.get("dropped", 0),
+            "last_stored_at": stats.get("last_stored_at"),
+            "last_stored_bytes": stats.get("last_stored_bytes"),
+            "last_batch_at": last_flush_at,
+            "last_error": last_error,
+        }
+
+    def _note(self, camera_key: str, **changes) -> None:
+        with self._lock:
+            entry = self._camera_stats.setdefault(camera_key, {})
+            for key, value in changes.items():
+                if key.startswith("+"):
+                    entry[key[1:]] = entry.get(key[1:], 0) + value
+                else:
+                    entry[key] = value
+
     def status(self) -> dict:
         settings = self._settings_service.get()
         files = self._pending_files()
@@ -355,6 +402,7 @@ class ArchiveService:
             for path in files:
                 relative = path.name.replace("__", "/")
                 destination = archive_root / relative
+                camera_key = relative.split("/", 1)[0]
 
                 try:
                     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -368,9 +416,22 @@ class ArchiveService:
                     moved += 1
                     moved_bytes += size
 
+                    self._note(
+                        camera_key,
+                        **{"+stored_ok": 1},
+                        last_stored_at=datetime.now(LOCAL_TIME_ZONE).isoformat(timespec="seconds"),
+                        last_stored_bytes=size,
+                    )
+
+                    if self._stats_service is not None:
+                        self._stats_service.record(
+                            camera_key, "disk", size, self._clip_time(relative)
+                        )
+
                 except Exception as error:
+                    self._note(camera_key, **{"+stored_failed": 1})
                     LOGGER.error(
-                        "Archive copy failed for %s: %s", path.name, error
+                        "Disk copy failed for %s: %s", path.name, error
                     )
 
             self._free_space(archive_root, settings.archive_min_free_gb)
@@ -510,6 +571,20 @@ class ArchiveService:
             )
 
     @staticmethod
+    def _clip_time(relative_key: str) -> datetime:
+        """The clip's own time from its name, for the hourly counters."""
+
+        name = relative_key.rsplit("/", 1)[-1]
+        stamp = name.split("_", 2)[-1].rsplit(".", 1)[0]  # YYYY_MM_DD_HH_MM_SS
+
+        try:
+            return datetime.strptime(stamp, "%Y_%m_%d_%H_%M_%S").replace(
+                tzinfo=LOCAL_TIME_ZONE
+            )
+        except ValueError:
+            return datetime.now(LOCAL_TIME_ZONE)
+
+    @staticmethod
     def _days_on_disk(archive_root: Path) -> list[str]:
         days: set[str] = set()
 
@@ -600,9 +675,10 @@ class ArchiveService:
             size = path.stat().st_size
             path.unlink(missing_ok=True)
             total -= size
+            self._note(path.name.split("__", 1)[0], **{"+dropped": 1})
 
             LOGGER.warning(
-                "Archive buffer full and the disk is unavailable; "
+                "Disk copy buffer full and the disk is unavailable; "
                 "dropped waiting clip %s",
                 path.name,
             )

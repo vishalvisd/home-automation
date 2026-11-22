@@ -17,7 +17,13 @@ from collections.abc import Callable
 from home_automation.services.camera_upload_service import (
     CameraUploadService,
 )
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from home_automation.services.archive_service import ArchiveService
+from home_automation.services.recording_stats_service import (
+    RecordingStatsService,
+)
 from home_automation.services.camera_stream_source import (
     CameraStreamSource,
 )
@@ -575,9 +581,11 @@ class CameraRecorderService:
         settings_service: CameraSettingsService,
         upload_service: CameraUploadService,
         archive_service: ArchiveService | None = None,
+        stats_service: RecordingStatsService | None = None,
     ) -> None:
         self._upload_service = upload_service
         self._archive_service = archive_service
+        self._stats_service = stats_service
         self._settings_service = settings_service
         self._lock = RLock()
 
@@ -588,6 +596,7 @@ class CameraRecorderService:
 
         self._next_retry_at: dict[str, float] = {}
         self._restart_counts: dict[str, int] = {}
+        self._last_recovery_at: dict[str, str] = {}
         self._recovery_pending_since: dict[str, float] = {}
 
         # "Desired running" is deliberately separate from
@@ -728,11 +737,28 @@ class CameraRecorderService:
             for camera in settings.cameras:
                 entry = self._slot_status(camera, "cloud")
                 entry["enabled"] = camera.enabled
+                entry["upload"] = self._upload_service.status(camera.key)
+                entry["hours"] = (
+                    self._stats_service.hours(camera.key, "cloud")
+                    if self._stats_service
+                    else []
+                )
 
                 if "archive" in self._roles_for(camera, settings):
-                    entry["archive"] = self._slot_status(camera, "archive")
+                    disk = self._slot_status(camera, "archive")
+                    disk["store"] = (
+                        self._archive_service.camera_status(camera.key)
+                        if self._archive_service
+                        else {}
+                    )
+                    disk["hours"] = (
+                        self._stats_service.hours(camera.key, "disk")
+                        if self._stats_service
+                        else []
+                    )
+                    entry["disk"] = disk
                 else:
-                    entry["archive"] = None
+                    entry["disk"] = None
 
                 camera_statuses.append(entry)
 
@@ -756,6 +782,7 @@ class CameraRecorderService:
         key = self._slot_key(camera, role)
         recorder = self._recorders.get(key)
         restart_count = self._restart_counts.get(key, 0)
+        last_recovery_at = self._last_recovery_at.get(key)
 
         if recorder is None:
             return {
@@ -772,11 +799,13 @@ class CameraRecorderService:
                 "stream_reconnect_count": 0,
                 "last_stream_error": None,
                 "restart_count": restart_count,
+                "last_recovery_at": last_recovery_at,
             }
 
         recorder_status = recorder.status()
         recorder_status.setdefault("role", role)
         recorder_status["restart_count"] = restart_count
+        recorder_status["last_recovery_at"] = last_recovery_at
         return recorder_status
 
     # ------------------------------------------------------------------
@@ -831,6 +860,9 @@ class CameraRecorderService:
                         self._restart_counts[key] = (
                             self._restart_counts.get(key, 0) + 1
                         )
+                        self._last_recovery_at[key] = datetime.now(
+                            ZoneInfo("Asia/Kolkata")
+                        ).isoformat(timespec="seconds")
 
                     LOGGER.info("Camera recorder recovered: %s", label)
 

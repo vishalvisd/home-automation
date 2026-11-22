@@ -106,7 +106,7 @@ export default function CameraPanel() {
 
     try {
       setArchive(await flushArchive());
-      setMessage("Archive batch finished.");
+      setMessage("Disk batch finished.");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -606,14 +606,14 @@ export default function CameraPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold text-slate-950">
-              Archive on the USB disk
+              Disk copy on the USB disk (primary recording)
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
-              Full-quality main-stream clips are buffered in RAM and
-              moved to the disk in batches. The disk is parked between
-              batches. When free space runs low the oldest day is
-              deleted.
+              The primary recording: full-quality main-stream clips are
+              buffered in RAM and moved to the disk in batches. The disk
+              is parked between batches. When free space runs low the
+              oldest day is deleted.
             </p>
           </div>
 
@@ -629,9 +629,9 @@ export default function CameraPanel() {
             }`}
           >
             {!settings.archive_enabled
-              ? "Archive off"
+              ? "Disk copy off"
               : archive?.last_error
-                ? "Archive error"
+                ? "Disk copy error"
                 : archive?.disk_present
                   ? archive?.mounted
                     ? "Disk awake, batch running"
@@ -645,7 +645,7 @@ export default function CameraPanel() {
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           <label className="rounded-2xl bg-slate-50 p-4">
             <span className="text-sm font-medium text-slate-700">
-              Archive enabled
+              Disk copy enabled
             </span>
 
             <div className="mt-3 flex items-center gap-3">
@@ -784,7 +784,7 @@ export default function CameraPanel() {
         </button>
 
         <p className="mt-3 text-xs text-slate-500">
-          Changing the archive setting takes effect after Save Settings
+          Changing the disk copy setting takes effect after Save Settings
           and the next Stop / Start Recording.
         </p>
       </div>
@@ -1302,10 +1302,9 @@ export default function CameraPanel() {
 
                         <p className="mt-2 text-xs text-slate-500">
                           When set, the clips uploaded to Backblaze
-                          come from this smaller stream. The archive
-                          disk and Live View always use the main
-                          stream above. Leave empty to upload the main
-                          stream.
+                          come from this smaller stream. The disk copy
+                          and Live View always use the main stream
+                          above. Leave empty to upload the main stream.
                         </p>
                       </div>
                     </div>
@@ -1320,66 +1319,36 @@ export default function CameraPanel() {
                   </div>
                 )}
 
-                {cameraStatus?.last_error && (
-                  <div className="mt-4 rounded-xl bg-red-50 p-3 text-xs text-red-700">
-                    {cameraStatus.last_error}
-                  </div>
+                {cameraStatus && !isEsp32 && (
+                  <>
+                    <CopyStatus
+                      title="Disk copy"
+                      subtitle="primary, full quality"
+                      kind="disk"
+                      recorder={cameraStatus.disk}
+                      store={cameraStatus.disk?.store}
+                      segmentSeconds={settings.segment_seconds}
+                    />
+                    <CopyStatus
+                      title="Cloud copy"
+                      subtitle="backup, sub stream"
+                      kind="cloud"
+                      recorder={cameraStatus}
+                      store={cameraStatus.upload}
+                      segmentSeconds={settings.segment_seconds}
+                    />
+                  </>
                 )}
 
-                {cameraStatus?.restart_count > 0 && (
-                  <div className="mt-4 rounded-xl bg-amber-50 p-3 text-xs text-amber-700">
-                    Automatic recorder recoveries:{" "}
-                    {cameraStatus.restart_count}
-                  </div>
-                )}
-
-                {cameraStatus?.current_fragment && (
-                  <Fragment
-                    label="Current segment"
-                    value={
-                      cameraStatus.current_fragment
-                    }
+                {cameraStatus && isEsp32 && (
+                  <CopyStatus
+                    title="Cloud copy"
+                    subtitle="ESP32-CAM"
+                    kind="cloud"
+                    recorder={cameraStatus}
+                    store={cameraStatus.upload}
+                    segmentSeconds={settings.segment_seconds}
                   />
-                )}
-
-                {cameraStatus?.last_completed_fragment && (
-                  <Fragment
-                    label="Last completed segment"
-                    value={
-                      cameraStatus.last_completed_fragment
-                    }
-                  />
-                )}
-
-                {cameraStatus?.archive && (
-                  <div
-                    className={`mt-3 rounded-xl p-3 text-xs ${
-                      cameraStatus.archive.last_error
-                        ? "bg-red-50 text-red-700"
-                        : cameraStatus.archive.stream_connected
-                          ? "bg-emerald-50 text-emerald-800"
-                          : "bg-slate-50 text-slate-600"
-                    }`}
-                  >
-                    <span className="font-semibold">Archive recorder:</span>{" "}
-                    {cameraStatus.archive.last_error
-                      ? cameraStatus.archive.last_error
-                      : cameraStatus.archive.stream_connected
-                        ? `recording main stream${
-                            cameraStatus.archive.video_codec
-                              ? ` (${cameraStatus.archive.video_codec}, audio ${cameraStatus.archive.audio_codec ?? "none"})`
-                              : ""
-                          }`
-                        : cameraStatus.archive.running
-                          ? "starting"
-                          : "stopped"}
-                    {cameraStatus.archive.last_completed_fragment && (
-                      <span className="text-slate-500">
-                        {" "}· last clip{" "}
-                        {cameraStatus.archive.last_completed_fragment.split("/").pop()}
-                      </span>
-                    )}
-                  </div>
                 )}
 
                 <button
@@ -1622,16 +1591,191 @@ function NumberField({
 }
 
 
-function Fragment({ label, value }) {
+
+// ---------------------------------------------------------------------
+// Per-copy status on the camera card: a light, plain-language lines and
+// a strip of the last 24 hours. Everything comes from the status API,
+// which reads memory only.
+// ---------------------------------------------------------------------
+
+function minutesSince(iso) {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, (Date.now() - then) / 60000);
+}
+
+function ago(iso) {
+  const minutes = minutesSince(iso);
+  if (minutes == null) return "never";
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${Math.round(minutes)} min ago`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${Math.floor(hours)} h ${Math.round(minutes % 60)} min ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+function clock(iso) {
+  return iso ? iso.slice(11, 16) : "";
+}
+
+function megabytes(bytes) {
+  return bytes == null ? "" : `${(bytes / 1e6).toFixed(1)} MB`;
+}
+
+function copyLight(recorder, store, kind, segmentSeconds) {
+  if (!recorder) return ["slate", "not configured"];
+
+  const clipLate = minutesSince(recorder.last_completed_at ?? recorder.started_at);
+  const staleAfter = (2 * segmentSeconds) / 60 + 1;
+  const recentRecovery = minutesSince(recorder.last_recovery_at) < 10;
+
+  if (!recorder.running) return ["red", recorder.last_error ? "recorder stopped with an error" : "recorder not running"];
+
+  if (kind === "cloud") {
+    if (store.last_failure_at && (!store.last_upload_at || store.last_failure_at > store.last_upload_at)) {
+      return ["red", "last upload failed"];
+    }
+    if (minutesSince(store.last_failure_at) < 10) return ["amber", "an upload failed recently"];
+  } else {
+    if (store.last_error && store.waiting_files > 0) return ["amber", "disk problem, clips waiting in RAM"];
+    if (store.dropped > 0 && minutesSince(store.last_batch_at) > 35) return ["red", "clips are being dropped"];
+    if (store.last_batch_at && minutesSince(store.last_batch_at) > 40 && store.waiting_files > 0) return ["amber", "disk batch is late"];
+  }
+
+  if (!recorder.stream_connected) return ["amber", "reconnecting to the camera"];
+  if (clipLate != null && clipLate > staleAfter) return ["amber", "no clip closed recently"];
+  if (recentRecovery) return ["amber", "recovered a moment ago"];
+  return ["green", "recording"];
+}
+
+const LIGHT_CLASSES = {
+  green: "bg-emerald-500",
+  amber: "bg-amber-400",
+  red: "bg-red-500",
+  slate: "bg-slate-300",
+};
+
+const HOUR_CLASSES = {
+  green: "bg-emerald-500",
+  amber: "bg-amber-400",
+  red: "bg-red-500",
+  unknown: "bg-slate-200",
+};
+
+function hourColour(hour, expected) {
+  if (!hour.known) return "unknown";
+  // The running hour is judged on what it could have produced so far.
+  const minutesIntoHour = hour.current ? new Date().getMinutes() + 1 : 60;
+  const possible = Math.max(1, Math.round((expected * minutesIntoHour) / 60));
+  const ratio = hour.count / possible;
+  if (ratio >= 0.9) return "green";
+  if (ratio >= 0.5) return "amber";
+  return "red";
+}
+
+function HourStrip({ hours, expected }) {
+  if (!hours || hours.length === 0) return null;
+
   return (
-    <div className="mt-4 rounded-xl bg-slate-50 p-3">
-      <div className="text-xs font-semibold text-slate-600">
-        {label}
+    <div className="mt-2 flex items-center gap-[3px]" title="Last 24 hours, newest on the right">
+      {hours.map((hour) => (
+        <span
+          key={hour.hour}
+          className={`h-3 flex-1 rounded-[2px] ${HOUR_CLASSES[hourColour(hour, expected)]}`}
+          title={`${hour.hour.slice(5, 16).replace("T", " ")}: ${hour.count} clip(s), ${megabytes(hour.bytes)}${hour.known ? "" : " (no data)"}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CopyStatus({ title, subtitle, recorder, store, kind, segmentSeconds }) {
+  const [light, reason] = copyLight(recorder, store ?? {}, kind, segmentSeconds);
+  const expected = Math.max(1, Math.round(3600 / segmentSeconds));
+  const stream = recorder
+    ? [
+        recorder.width && recorder.height ? `${recorder.width}x${recorder.height}` : null,
+        recorder.video_codec,
+        recorder.audio_codec ? "audio" : "no audio",
+      ].filter(Boolean).join(" ")
+    : "";
+
+  return (
+    <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`inline-block h-3 w-3 rounded-full ${LIGHT_CLASSES[light]}`} />
+        <span className="font-semibold text-slate-900">{title}</span>
+        <span className="text-slate-500">{subtitle}</span>
+        <span className="ml-auto text-slate-500">{reason}</span>
       </div>
 
-      <div className="mt-1 break-all font-mono text-xs text-slate-500">
-        {value}
-      </div>
+      {recorder && (
+        <div className="mt-2 space-y-1">
+          <div>
+            {recorder.stream_connected
+              ? `Connected ${ago(recorder.connected_at)}`
+              : recorder.running
+                ? "Reconnecting"
+                : "Stopped"}
+            {stream ? ` · ${stream}` : ""}
+          </div>
+
+          <div>
+            {recorder.current_fragment_started_at
+              ? `Recording a clip since ${clock(recorder.current_fragment_started_at)} (${ago(recorder.current_fragment_started_at)})`
+              : "No clip in progress"}
+            {recorder.last_completed_at
+              ? ` · last clip closed ${ago(recorder.last_completed_at)}, ${megabytes(recorder.last_completed_bytes)}${
+                  recorder.last_completed_duration ? `, ${Math.round(recorder.last_completed_duration)} s` : ""
+                }`
+              : " · no clip closed yet"}
+          </div>
+
+          {kind === "cloud" && store && (
+            <div>
+              {store.last_upload_at
+                ? `Uploaded ${ago(store.last_upload_at)} to ${store.last_upload_account}, ${megabytes(store.last_upload_bytes)}`
+                : "Nothing uploaded yet"}
+              {` · since start: ${store.uploads_ok} uploaded, ${store.uploads_failed} failed`}
+              {store.dropped > 0 ? `, ${store.dropped} dropped` : ""}
+              {store.waiting_files > 0 ? ` · ${store.waiting_files} waiting` : ""}
+            </div>
+          )}
+
+          {kind === "disk" && store && (
+            <div>
+              {store.waiting_files > 0
+                ? `Waiting for the disk batch: ${store.waiting_files} clip(s), ${megabytes(store.waiting_bytes)}`
+                : "Nothing waiting for the disk"}
+              {store.last_stored_at
+                ? ` · last stored ${ago(store.last_stored_at)}`
+                : " · nothing stored yet"}
+              {store.last_batch_at ? ` · last batch ${ago(store.last_batch_at)}` : ""}
+              {` · since start: ${store.stored_ok} stored${store.stored_failed ? `, ${store.stored_failed} failed` : ""}${store.dropped ? `, ${store.dropped} dropped` : ""}`}
+            </div>
+          )}
+
+          {recorder.restart_count > 0 && (
+            <div className="text-amber-700">
+              Recoveries: {recorder.restart_count}
+              {recorder.last_recovery_at ? `, last ${ago(recorder.last_recovery_at)}` : ""}
+            </div>
+          )}
+
+          {(recorder.last_error || (kind === "cloud" && store?.last_failure) || (kind === "disk" && store?.last_error)) && (
+            <div className="text-red-700">
+              {recorder.last_error
+                ? `${recorder.last_error}${recorder.last_error_at ? ` (${ago(recorder.last_error_at)})` : ""}`
+                : kind === "cloud"
+                  ? `Upload: ${store.last_failure} (${ago(store.last_failure_at)})`
+                  : `Disk: ${store.last_error}`}
+            </div>
+          )}
+        </div>
+      )}
+
+      <HourStrip hours={recorder?.hours} expected={expected} />
     </div>
   );
 }

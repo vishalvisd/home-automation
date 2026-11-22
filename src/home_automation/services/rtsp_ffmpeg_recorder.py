@@ -5,11 +5,19 @@ import shutil
 import signal
 import subprocess
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from threading import Event, RLock, Thread
 from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from zoneinfo import ZoneInfo
+
+LOCAL_TIME_ZONE = ZoneInfo("Asia/Kolkata")
+
+
+def _now_iso() -> str:
+    return datetime.now(LOCAL_TIME_ZONE).isoformat(timespec="seconds")
 
 from home_automation.config.camera_settings import (
     CameraConfig,
@@ -93,6 +101,18 @@ class RtspFfmpegRecorder:
 
         self._video_codec: str | None = None
         self._audio_codec: str | None = None
+        self._width: int | None = None
+        self._height: int | None = None
+
+        # Plain-language status for the UI (wall-clock, Asia/Kolkata).
+        self._started_at: str | None = None
+        self._connected_at: str | None = None
+        self._current_fragment_started_at: str | None = None
+        self._last_completed_at: str | None = None
+        self._last_completed_bytes: int | None = None
+        self._last_completed_duration: float | None = None
+        self._last_error_at: str | None = None
+        self._segments_completed = 0
 
         if role == "cloud" and camera.sub_stream_url.strip():
             self._stream_url = camera.sub_stream_url.strip()
@@ -145,6 +165,9 @@ class RtspFfmpegRecorder:
 
                 self._video_codec = video_codec
                 self._audio_codec = audio_codec
+                self._started_at = _now_iso()
+                self._connected_at = None
+                self._current_fragment_started_at = None
 
                 command = self._build_command(
                     camera_directory,
@@ -194,6 +217,7 @@ class RtspFfmpegRecorder:
 
             except Exception as error:
                 self._last_error = str(error)
+                self._last_error_at = _now_iso()
                 self._running = False
                 self._process = None
                 raise
@@ -244,6 +268,18 @@ class RtspFfmpegRecorder:
                 "last_stream_error": None,
                 "video_codec": self._video_codec,
                 "audio_codec": self._audio_codec,
+                "width": self._width,
+                "height": self._height,
+                "started_at": self._started_at,
+                "connected_at": self._connected_at,
+                "current_fragment_started_at": (
+                    self._current_fragment_started_at
+                ),
+                "last_completed_at": self._last_completed_at,
+                "last_completed_bytes": self._last_completed_bytes,
+                "last_completed_duration": self._last_completed_duration,
+                "last_error_at": self._last_error_at,
+                "segments_completed": self._segments_completed,
             }
 
     # ------------------------------------------------------------------
@@ -257,7 +293,7 @@ class RtspFfmpegRecorder:
             FFPROBE_BINARY,
             "-v", "error",
             "-rtsp_transport", "tcp",
-            "-show_entries", "stream=codec_type,codec_name",
+            "-show_entries", "stream=codec_type,codec_name,width,height",
             "-of", "json",
             self._stream_url,
         ]
@@ -288,6 +324,8 @@ class RtspFfmpegRecorder:
         for stream in streams:
             if stream.get("codec_type") == "video" and video_codec is None:
                 video_codec = stream.get("codec_name")
+                self._width = stream.get("width")
+                self._height = stream.get("height")
             if stream.get("codec_type") == "audio" and audio_codec is None:
                 audio_codec = stream.get("codec_name")
 
@@ -385,9 +423,11 @@ class RtspFfmpegRecorder:
             previous = self._current_fragment
             self._current_fragment = str(path)
             self._last_segment_opened_at = monotonic()
+            self._current_fragment_started_at = _now_iso()
 
             if not self._connected:
                 self._connected = True
+                self._connected_at = _now_iso()
                 LOGGER.info(
                     "Camera stream connected: %s",
                     self.label,
@@ -423,6 +463,7 @@ class RtspFfmpegRecorder:
             self._last_error = (
                 f"ffmpeg exited with code {return_code}: {detail}"
             )
+            self._last_error_at = _now_iso()
 
         LOGGER.error(
             "Camera recorder error [%s]: %s",
@@ -474,8 +515,10 @@ class RtspFfmpegRecorder:
 
         # A clip cut short by a kill or a double signal has no index and
         # cannot be played or joined. Better to lose it here, loudly,
-        # than to upload or archive garbage.
-        if not self._playable(file_path):
+        # than to keep garbage.
+        duration = self._duration(file_path)
+
+        if duration is None:
             file_path.unlink(missing_ok=True)
 
             LOGGER.error(
@@ -487,6 +530,10 @@ class RtspFfmpegRecorder:
 
         with self._lock:
             self._last_completed_fragment = str(file_path)
+            self._last_completed_at = _now_iso()
+            self._last_completed_bytes = file_path.stat().st_size
+            self._last_completed_duration = duration
+            self._segments_completed += 1
 
         LOGGER.info(
             "Camera segment created [%s]: %s",
@@ -505,8 +552,8 @@ class RtspFfmpegRecorder:
                 )
 
     @staticmethod
-    def _playable(file_path: Path) -> bool:
-        """True when ffprobe can read the file's header and duration."""
+    def _duration(file_path: Path) -> float | None:
+        """The clip's duration in seconds, or None if ffprobe cannot read it."""
 
         try:
             result = subprocess.run(
@@ -521,9 +568,21 @@ class RtspFfmpegRecorder:
                 check=False,
             )
         except Exception:
-            return False
+            return None
 
-        return result.returncode == 0 and result.stdout.strip() not in ("", "N/A")
+        value = result.stdout.strip()
+
+        if result.returncode != 0 or value in ("", "N/A"):
+            return None
+
+        try:
+            return round(float(value), 1)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _playable(file_path: Path) -> bool:
+        return RtspFfmpegRecorder._duration(file_path) is not None
 
     def _discard_leftover_files(self, camera_directory: Path) -> None:
         """

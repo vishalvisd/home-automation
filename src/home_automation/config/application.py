@@ -34,6 +34,8 @@ BACKBLAZE_CREDENTIALS_FILE = (
 CLOUD_ROTATION_STATE_FILE = (
     RUNTIME_DIRECTORY / "cloud_rotation_state.json"
 )
+# Hourly clip counters per camera and copy, saved at most once an hour.
+RECORDING_STATS_FILE = RUNTIME_DIRECTORY / "recording_stats.json"
 # Live view in the browser is served by go2rtc, a separate systemd
 # service on the Pi (scripts/install_go2rtc.sh). The backend writes its
 # config file from the camera list and restarts it when that changes.

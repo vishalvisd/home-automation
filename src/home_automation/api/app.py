@@ -17,6 +17,7 @@ from home_automation.config.application import (
     CAMERA_PRESET_STATE_FILE,
     CAMERA_SETTINGS_FILE,
     CLOUD_ROTATION_STATE_FILE,
+    RECORDING_STATS_FILE,
     FRONTEND_DIST_DIRECTORY,
     GO2RTC_CONFIG_FILE,
     GO2RTC_SERVICE_NAME,
@@ -40,6 +41,9 @@ from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
 from home_automation.services.live_view_service import LiveViewService
+from home_automation.services.recording_stats_service import (
+    RecordingStatsService,
+)
 from home_automation.services.relay_manager import RelayManager
 from home_automation.services.watering_scheduler_service import (
     WateringSchedulerService,
@@ -119,17 +123,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cloud_rotation_service,
     )
 
+    recording_stats_service = RecordingStatsService(RECORDING_STATS_FILE)
+
     camera_upload_service = CameraUploadService(
         camera_settings_service,
         backblaze_b2_storage_provider,
+        recording_stats_service,
     )
 
-    archive_service = ArchiveService(camera_settings_service)
+    archive_service = ArchiveService(
+        camera_settings_service,
+        recording_stats_service,
+    )
 
     camera_recorder_service = CameraRecorderService(
         camera_settings_service,
         camera_upload_service,
         archive_service,
+        recording_stats_service,
     )
 
     camera_preset_service = CameraPresetService(
@@ -175,6 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         camera_upload_service.shutdown()
         # After the recorders, so the last clips are on the disk.
         archive_service.shutdown()
+        recording_stats_service.shutdown()
         watering_scheduler_service.stop()
         watering_service.shutdown()
         relay_manager.close()
