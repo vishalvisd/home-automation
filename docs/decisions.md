@@ -83,6 +83,15 @@ about it is the owner's decision once there is data.
 | No $0 spending cap; a small bill is accepted | Caps caused silent loss on 20 and 21 Nov 2026 |
 | Object layout `camN/YYYY/MM/DD/HH/cam_N_YYYY_MM_DD_HH_MM_SS.<ext>` is fixed | Another project downloads these objects |
 
+## Router
+
+| Decision | Reason |
+|---|---|
+| The main router is power-cycled once a night, at the moment the day's Backblaze account changes (just after midnight), through the `router_power` relay (23 Nov 2026) | For the router's own health. Midnight is the safest time: streets still active, no office calls (the owner works 2 PM to 10 PM, sometimes 11 PM), thefts have happened around 1 AM |
+| About two minutes without recording on all cameras during that restart is accepted (23 Nov 2026) | Every camera reaches the Pi through the router's own ports |
+| No separate network switch on the roof (23 Nov 2026) | Considered and declined by the owner; the nightly gap is acceptable to him |
+| The restart is not a way to give each Backblaze account a different public address | See "Decided against" |
+
 ## Downloader
 
 - Offers Cloud or Pi disk as the source; no automatic preference.

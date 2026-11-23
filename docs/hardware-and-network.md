@@ -38,7 +38,12 @@ So every camera reaches the Pi through the ZTE router's own ports. While
 the ZTE is off or restarting, the Pi can reach no camera and nothing is
 recorded, on the disk or in the cloud. A small switch on the roof (Pi,
 cam4 and the two access-point cables into the switch, one cable from the
-switch to the ZTE) would remove that dependence. Not installed.
+switch to the ZTE) would remove that dependence. The owner considered
+it on 23 Nov 2026 and decided against it.
+
+Until 22 Nov 2026 a second-floor access point also existed. It was
+removed to free a ZTE port for cam4; the second floor (tenant) uses the
+ZTE's own Wi-Fi.
 
 The router power relay is `router_power` (IN2, GPIO 3). The router is
 wired through the normally closed contact: relay OFF means powered,
