@@ -160,6 +160,18 @@ export default function LiveViewPanel({ active }) {
 
   const ready = status?.installed && status?.running;
 
+  const showingPlayers = Boolean(ready && active && playing.length > 0);
+  const grid = useRef(null);
+
+  // When the cameras appear (the tab is opened, or the page starts on
+  // it), bring them to the top of the screen, past the heading and the
+  // controls, so nobody has to scroll down to see them.
+  useEffect(() => {
+    if (showingPlayers && grid.current) {
+      grid.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [showingPlayers]);
+
   return (
     <section className="mt-8 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -281,8 +293,11 @@ export default function LiveViewPanel({ active }) {
         </div>
       )}
 
-      {ready && active && playing.length > 0 && (
-        <div className={`mt-5 grid gap-4 ${gridClass}`}>
+      {showingPlayers && (
+        <div
+          ref={grid}
+          className={`mt-5 grid scroll-mt-4 gap-4 ${gridClass}`}
+        >
           {playing.map((camera) => {
             const useSub = quality === "sub" && camera.sub_available;
             const streamKey = useSub ? `${camera.key}_sub` : camera.key;
