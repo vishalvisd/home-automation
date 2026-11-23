@@ -37,9 +37,18 @@ const TABS = [
   },
 ];
 
+// The address can ask for a tab, for example "/?tab=live". The Android
+// app opens the page that way so it starts on Live View. Without it, or
+// with a name that is not a tab, the page starts on the relays as before.
+function startingTab() {
+  const asked = new URLSearchParams(window.location.search).get("tab");
+
+  return TABS.some((tab) => tab.key === asked) ? asked : "relays";
+}
+
 export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
-  const [activeTab, setActiveTab] = useState("relays");
+  const [activeTab, setActiveTab] = useState(startingTab);
 
   async function checkBackend() {
     setBackendStatus("checking");
