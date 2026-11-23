@@ -72,6 +72,14 @@ function LivePlayer({ streamKey, port }) {
 
     holder.current.appendChild(player);
 
+    // Sound is off whenever a camera starts playing. The player makes
+    // its <video> when it is added to the page, so it exists by now.
+    // The speaker button on the video turns the sound on for that
+    // camera until the player is made again.
+    if (player.video) {
+      player.video.muted = true;
+    }
+
     // Setting src starts the connection once the element is in the DOM.
     player.src = liveStreamUrl(port, streamKey);
 

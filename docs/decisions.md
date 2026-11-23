@@ -141,6 +141,7 @@ opening Chrome and typing the Pi's address. The app is in `android/`.
 | Built on the Mac with JDK 17 and the Android command-line tools, no Android Studio, no Gradle | One Java file with no libraries does not need them |
 | The APK is not committed; it is built from source and copied to the phone | |
 | The name shown for the Pi page and the app is `visd-HA` | The page title used to be "frontend" |
+| Live View always starts with the sound off on every camera, in the app and in a browser; the speaker button on a video turns it on | Four cameras speaking at once when the app opens is not wanted. A browser usually silenced them by itself; the app did not |
 
 ## Decided against
 

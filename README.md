@@ -1094,6 +1094,10 @@ connects to ws://<pi>:1984/api/ws?src=camN. H.265 plays in Safari and
 in Chrome on Mac; for other devices set the camera's sub stream to
 H.264. go2rtc listens on port 1984 on all interfaces with no login.
 
+Every camera starts with the sound off whenever Live View opens. The
+speaker button on a video turns its sound on; that lasts until the tab,
+the Main / Sub switch or the ticked cameras change.
+
 Opening the page on a chosen tab, and the Android app
 
 The page starts on Relay Controls. An address that ends in "?tab=" and a
