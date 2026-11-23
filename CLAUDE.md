@@ -8,8 +8,7 @@ architecture reference is `README.md`; read it first.
 1. `docs/decisions.md`: what the owner has decided. Do not reopen these.
 2. `docs/hardware-and-network.md`: the devices, addresses, camera streams
    and measured sizes as they are now.
-3. The newest file in `docs/context/`: where the last session stopped.
-4. `README.md` for the architecture, `SETUP_PI.md` for building a Pi.
+3. `README.md` for the architecture, `SETUP_PI.md` for building a Pi.
 
 Keep them current. When a decision is made, a device changes or a manual
 step is added, update the matching file in the same piece of work. These
