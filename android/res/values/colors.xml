@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same greys as the Pi's page, so the app and the page look like one. -->
+<resources>
+    <color name="page">#F1F5F9</color>
+    <color name="ink">#020617</color>
+    <color name="muted">#475569</color>
+</resources>

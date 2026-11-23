@@ -1,0 +1,5 @@
+# The built app and the work files of a build.
+/build/
+
+# The signing key. Never commit.
+/runtime/

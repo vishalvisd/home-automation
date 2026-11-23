@@ -125,6 +125,23 @@ buttons, and three of them end by themselves.
 | No automated test suite yet | The design is still changing quickly and a suite would be rewritten with every change. Each change is checked on the real hardware before it is trusted, and the system checks itself while running: every finished clip is probed and discarded loudly if unplayable, per-camera counters and lights show failures, and the update script checks that the service answers. A suite will be added when the design settles |
 | A check script written for a change (for example with a simulated disk or relay) is kept in `tests/` | It costs nothing extra once written, and it is the start of the suite |
 
+## Android app (23 Nov 2026)
+
+The owner wants one tap on the phone to show the four cameras, without
+opening Chrome and typing the Pi's address. The app is in `android/`.
+
+| Decision | Reason |
+|---|---|
+| The app shows the same page the Pi serves and adds nothing of its own | A dead simple app; a change to the page needs no new APK |
+| It opens on Live View, through `?tab=live` in the address | The page honours a tab named in the address; without it the page starts on the relays as before |
+| The Pi's address is a setting in the app, `192.168.1.31:8000` by default | The owner wants to be able to change it. Accepted with it: the app is allowed plain HTTP with any address, because a rule for one address cannot follow a setting |
+| Internet is the only permission | As few permissions as possible |
+| It installs on Android 8 and newer | It must also run on older phones in the family |
+| It works on the home Wi-Fi only | Nothing is exposed to the internet (see Access and testing) |
+| Built on the Mac with JDK 17 and the Android command-line tools, no Android Studio, no Gradle | One Java file with no libraries does not need them |
+| The APK is not committed; it is built from source and copied to the phone | |
+| The name shown for the Pi page and the app is `visd-HA` | The page title used to be "frontend" |
+
 ## Decided against
 
 - Buying the official Pi power supply (the 45 W charger copes).

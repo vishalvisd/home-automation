@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The menu shown when the app icon is pressed and held. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_address"
+        android:shortcutId="pi_address"
+        android:shortcutShortLabel="@string/shortcut_address">
+        <intent
+            android:action="com.visd.ha.SHOW_ADDRESS"
+            android:targetClass="com.visd.ha.MainActivity"
+            android:targetPackage="com.visd.ha" />
+    </shortcut>
+</shortcuts>

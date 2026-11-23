@@ -33,6 +33,28 @@ rebuilt.
   `frontend/vite.config.js`; change both if the Pi's address changes. It
   affects only a local preview on the Mac, not the built frontend. In
   practice changes are checked on the Pi itself after an update.
+- Android build tools, installed with Homebrew on 23 Nov 2026 for the
+  app in `android/`: `openjdk@17` (about 300 MB; the Mac's own Java is
+  version 8) and the cask `android-commandlinetools` (about 170 MB, SDK
+  folder `/opt/homebrew/share/android-commandlinetools`).
+  `bash android/setup_tools.sh` adds the two Android parts the build
+  needs. Nothing was added to the shell's PATH; the build scripts find
+  the tools themselves.
+
+### Where the Pi's address is written down
+
+If the Pi's address changes, these hold the old one:
+
+| Place | What to do |
+|---|---|
+| The Android app on each phone | Press and hold the app icon, "Pi address". The default for a new install is in `android/src/com/visd/ha/MainActivity.java` |
+| `frontend/.env.development` and `frontend/vite.config.js` | Edit both (Mac preview only) |
+| `~/.ssh/config` on the Mac, `Host pi` | Edit |
+| The downloader's Pi address setting | Change it in the downloader |
+
+The Pi gets its address from the router by DHCP. Whether the ZTE router
+has a binding for the Pi's MAC has not been confirmed; with one, the
+address cannot change by itself.
 
 ### How it is cabled (as told by the owner, 23 Nov 2026)
 

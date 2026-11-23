@@ -1094,6 +1094,18 @@ connects to ws://<pi>:1984/api/ws?src=camN. H.265 plays in Safari and
 in Chrome on Mac; for other devices set the camera's sub stream to
 H.264. go2rtc listens on port 1984 on all interfaces with no login.
 
+Opening the page on a chosen tab, and the Android app
+
+The page starts on Relay Controls. An address that ends in "?tab=" and a
+tab key starts it on that tab instead: http://<pi>:8000/?tab=live opens
+Live View. The keys are relays, cameras, live, watering and automations;
+any other value is ignored.
+
+The android/ folder holds a small Android app, visd-HA, that shows this
+same page opened on Live View, so the phone needs no browser and no typed
+address. It is built on the Mac and copied to the phone as an APK; the Pi
+never uses that folder. See android/README.md.
+
 Camera API
 
 GET  /api/cameras/settings

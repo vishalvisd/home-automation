@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A small house, for the "Pi address" entry of the app icon's menu. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#020617"
+        android:pathData="M12,3 L22,12 L19,12 L19,21 L5,21 L5,12 L2,12 Z" />
+</vector>

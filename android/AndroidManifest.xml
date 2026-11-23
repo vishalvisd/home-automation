@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  visd-HA: a window onto the web page the Pi serves. Nothing else.
+
+  The only permission is the internet one, which Android grants without
+  asking. The minimum and target Android versions are given by build.sh.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.visd.ha">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      usesCleartextTraffic: the Pi serves plain HTTP, and its address is a
+      setting, so plain HTTP cannot be limited to one address here.
+      allowBackup off: the app holds nothing worth backing up.
+    -->
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true">
+
+        <!-- Do not send usage statistics of the web view to Google. -->
+        <meta-data
+            android:name="android.webkit.WebView.MetricsOptOut"
+            android:value="true" />
+
+        <!--
+          configChanges: turning the phone must not restart the screen,
+          because that would reload the page and reconnect every camera.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Press and hold the app icon: "Pi address". -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+    </application>
+</manifest>

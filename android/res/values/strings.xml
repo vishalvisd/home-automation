@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">visd-HA</string>
+
+    <string name="status_opening">Opening visd-HA…</string>
+
+    <string name="address_title">Pi address</string>
+    <string name="address_intro">The address of the Pi on the home network. The port is 8000 unless you type another one.</string>
+    <string name="address_unreachable">Cannot reach the Pi at %1$s.\n\nThis app works only on the home Wi-Fi. Check the Wi-Fi and press Open to try again, or change the address if the Pi has a new one.</string>
+    <string name="address_hint" translatable="false">192.168.1.31:8000</string>
+    <string name="address_open">Open</string>
+    <string name="address_invalid">Type an address like 192.168.1.31:8000</string>
+    <string name="address_tip">To come back to this screen later, press and hold the app icon and choose \"Pi address\".</string>
+
+    <string name="shortcut_address">Pi address</string>
+</resources>

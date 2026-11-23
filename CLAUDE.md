@@ -165,6 +165,18 @@ gets the Backblaze account list from the Pi and searches every account.
 It has its own `pyproject.toml`, `.venv`, `frontend/` and gitignored
 `runtime/`. See `downloader/README.md`. Clip names carry the clip END time.
 
+## Android app (`android/`)
+
+A separate small app, not run on the Pi: one Java file that shows the
+Pi's own page in a web view, opened on Live View with `?tab=live`. It is
+built on the Mac with `bash android/build.sh` (JDK 17 and the Android
+command-line tools, no Gradle) and copied to the phone as an APK, which
+is not committed. Keep it a plain window onto the page: internet is its
+only permission, and features belong in the page, not in the app. The
+signing key lives in the gitignored `android/runtime/`. See
+`android/README.md`. It cannot be run on the Mac; the owner tries it on
+his phone.
+
 ## Layout
 
 ```
@@ -176,4 +188,5 @@ frontend/src/ React UI (tabs: relays, cameras, watering, automations)
 scripts/      Pi setup and update scripts, go2rtc install, LAN camera finder
 automation_templates/  default standalone automation scripts
 downloader/   local Mac/Windows app for the uploaded clips (own venv and UI)
+android/      Android app that shows the Pi's page on Live View (own build)
 ```
