@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, process.cwd(), "");
 
   const backendTarget =
-    environment.VITE_BACKEND_TARGET || "http://192.168.1.10:8000";
+    environment.VITE_BACKEND_TARGET || "http://192.168.1.31:8000";
 
   return {
     plugins: [

@@ -27,11 +27,12 @@ rebuilt.
 - SSH: `ssh pi` (192.168.1.31, key `~/.ssh/id_ed25519_pi`) is the entry
   to use. The `Host piwifi` entry in `~/.ssh/config` points at
   192.168.1.10, an address the Pi no longer has.
-- The frontend's development server still targets the old address:
-  `frontend/.env.development` and the default in `frontend/vite.config.js`
-  say `http://192.168.1.10:8000`. A local preview therefore needs
-  `VITE_BACKEND_TARGET=http://192.168.1.31:8000`. In practice changes are
-  checked on the Pi itself after an update.
+- The frontend's development server (`npm run dev` in `frontend/`) sends
+  its API calls to the Pi at `http://192.168.1.31:8000`. The address is
+  set in `frontend/.env.development`, with the same default in
+  `frontend/vite.config.js`; change both if the Pi's address changes. It
+  affects only a local preview on the Mac, not the built frontend. In
+  practice changes are checked on the Pi itself after an update.
 
 ### How it is cabled (as told by the owner, 23 Nov 2026)
 
