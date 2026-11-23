@@ -91,7 +91,6 @@ about it is the owner's decision once there is data.
 ## Decided against
 
 - Buying the official Pi power supply (the 45 W charger copes).
-- Tricks to hide the multiple free accounts from Backblaze.
 - Appliance-state tracking for relays (relay ON/OFF means the coil).
 
 ## Deferred, not rejected
