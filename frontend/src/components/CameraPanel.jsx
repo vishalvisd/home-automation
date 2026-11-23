@@ -959,6 +959,77 @@ export default function CameraPanel() {
           />
         </div>
 
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <label className="rounded-2xl bg-slate-50 p-4">
+            <span className="text-sm font-medium text-slate-700">
+              Restart the router when the day&apos;s account changes
+            </span>
+
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={Boolean(settings.router_restart_enabled)}
+                onChange={(event) =>
+                  updateSetting(
+                    "router_restart_enabled",
+                    event.target.checked,
+                  )
+                }
+                className="h-5 w-5"
+              />
+
+              <span className="text-sm">
+                {settings.router_restart_enabled
+                  ? "On: once a night, just after midnight"
+                  : "Off"}
+              </span>
+            </div>
+          </label>
+
+          <NumberSetting
+            label="Router power off for"
+            value={settings.router_restart_off_seconds}
+            suffix="seconds"
+            min={5}
+            onChange={(value) =>
+              updateSetting("router_restart_off_seconds", value)
+            }
+          />
+
+          <NumberSetting
+            label="Then hold uploads at least"
+            value={settings.router_restart_wait_seconds}
+            suffix="seconds"
+            min={0}
+            onChange={(value) =>
+              updateSetting("router_restart_wait_seconds", value)
+            }
+          />
+        </div>
+
+        <p className="mt-2 text-xs text-slate-500">
+          During the restart no camera can reach the Pi, so about two
+          minutes are not recorded. After the wait, uploads resume as soon
+          as the internet answers, or after five minutes at the latest.
+        </p>
+
+        {rotation?.router_restart && (
+          <div className="mt-3 rounded-xl bg-slate-50 p-4 text-xs text-slate-600">
+            <span className="font-semibold text-slate-800">
+              Router restart:
+            </span>{" "}
+            {rotation.router_restart.running
+              ? `running now, started ${rotation.router_restart.last_started_at.slice(0, 19).replace("T", " ")}`
+              : rotation.router_restart.last_finished_at
+                ? `last ${rotation.router_restart.last_finished_at.slice(0, 19).replace("T", " ")}, ${rotation.router_restart.last_result}${
+                    rotation.router_restart.last_internet_back_after_seconds != null
+                      ? `, internet back ${rotation.router_restart.last_internet_back_after_seconds} s after power on`
+                      : ""
+                  }`
+                : "none since the backend started"}
+          </div>
+        )}
+
         {rotation && (
           <div className="mt-4 rounded-xl bg-slate-50 p-4 text-xs text-slate-600">
             <span className="font-semibold text-slate-800">

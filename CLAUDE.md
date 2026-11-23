@@ -97,6 +97,16 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - Do not auto-restart the shared camera power relay because one camera
   fails.
 
+## Nightly router restart that is deliberate
+
+- With `router_restart_enabled`, the main router is power-cycled once a
+  night through the `router_power` relay, at the moment the day's
+  Backblaze account changes (`RouterRestartService`, called from
+  `CameraUploadService`). It is for the router's health only.
+- It costs about two minutes of recording on every camera, because every
+  camera reaches the Pi through the router. The owner accepts this.
+- It runs only in the hour after midnight. Do not add other triggers.
+
 ## Disk copy rules that are deliberate
 
 - Call it the disk copy (the primary recording); the cloud is the backup.

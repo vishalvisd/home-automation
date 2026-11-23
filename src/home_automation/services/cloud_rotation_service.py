@@ -82,6 +82,21 @@ class CloudRotationService:
 
             return chosen
 
+    def is_new_day(self, recorded_at: datetime) -> bool:
+        """
+        True when this clip belongs to a day later than every day that
+        already has an account: the next upload will change account.
+        False on a fresh installation, where there is nothing to
+        change from.
+        """
+
+        day_key = recorded_at.astimezone(LOCAL_TIME_ZONE).date().isoformat()
+
+        with self._lock:
+            days = self._read()
+
+        return bool(days) and day_key not in days and day_key > max(days)
+
     def status(self) -> dict:
         today = datetime.now(LOCAL_TIME_ZONE).date()
 

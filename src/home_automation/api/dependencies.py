@@ -29,6 +29,9 @@ from home_automation.services.archive_service import ArchiveService
 from home_automation.services.cloud_rotation_service import (
     CloudRotationService,
 )
+from home_automation.services.router_restart_service import (
+    RouterRestartService,
+)
 
 
 def get_relay_manager(request: Request) -> RelayManager:
@@ -94,3 +97,9 @@ def get_archive_service(
     request: Request,
 ) -> ArchiveService:
     return request.app.state.archive_service
+
+
+def get_router_restart_service(
+    request: Request,
+) -> RouterRestartService:
+    return request.app.state.router_restart_service

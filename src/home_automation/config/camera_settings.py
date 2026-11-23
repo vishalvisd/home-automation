@@ -148,6 +148,17 @@ class CameraSettings(BaseModel):
         ge=1,
     )
 
+    # Restart the main router once a night, for its own health, at the
+    # moment the day's Backblaze account changes (the first clip after
+    # midnight). The router's power is cut for router_restart_off_seconds
+    # through the router_power relay, then uploads wait at least
+    # router_restart_wait_seconds, and after that until the internet
+    # answers. Nothing is recorded meanwhile, because every camera
+    # reaches the Pi through the router.
+    router_restart_enabled: bool = False
+    router_restart_off_seconds: int = Field(default=30, ge=5, le=300)
+    router_restart_wait_seconds: int = Field(default=60, ge=0, le=600)
+
     cameras: list[CameraConfig] = [
         CameraConfig(
             key="cam1",

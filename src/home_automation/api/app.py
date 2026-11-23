@@ -47,6 +47,9 @@ from home_automation.services.recording_stats_service import (
     RecordingStatsService,
 )
 from home_automation.services.relay_manager import RelayManager
+from home_automation.services.router_restart_service import (
+    RouterRestartService,
+)
 from home_automation.services.watering_scheduler_service import (
     WateringSchedulerService,
 )
@@ -127,10 +130,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     recording_stats_service = RecordingStatsService(RECORDING_STATS_FILE)
 
+    router_restart_service = RouterRestartService(
+        camera_settings_service,
+        relay_manager,
+    )
+
     camera_upload_service = CameraUploadService(
         camera_settings_service,
         backblaze_b2_storage_provider,
         recording_stats_service,
+        cloud_rotation_service,
+        router_restart_service,
     )
 
     archive_service = ArchiveService(
@@ -169,6 +179,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.camera_preset_service = camera_preset_service
     app.state.backblaze_credentials_service = backblaze_credentials_service
     app.state.cloud_rotation_service = cloud_rotation_service
+    app.state.router_restart_service = router_restart_service
     app.state.live_view_service = live_view_service
 
     watering_scheduler_service.start()

@@ -914,6 +914,24 @@ a stop on the cycle; disabling or removing one is skipped; past days never
 move. Each bucket carries a lifecycle rule (currently 3+1 days) so an
 account holds about one day of clips when its turn comes round again.
 
+Nightly router restart (router_restart_enabled, off by default). The main
+router is power-cycled once a night for its own health, at the moment the
+account changes: when the first clip of a new day is about to upload,
+CameraUploadService lets the uploads in progress finish (up to 60 seconds),
+holds the rest, and calls RouterRestartService. That turns the router_power
+relay ON for router_restart_off_seconds (the router hangs on the normally
+closed contact, so ON cuts its power), turns it OFF, waits
+router_restart_wait_seconds, then keeps waiting until api.backblazeb2.com
+answers on port 443, five minutes at most. Then uploads resume and the new
+account is chosen. Rules: only in the hour after midnight (if the Pi was
+off at midnight the account changes later without a restart), once per
+day, never on a fresh installation, and not when an account is unticked
+during the day. The relay is always released, also on shutdown. Every
+camera reaches the Pi through the router's own ports, so about two minutes
+are not recorded on any camera each night, and every recorder shows one
+recovery. GET /api/cameras/backblaze/rotation carries the last restart
+under "router_restart".
+
 The old single-key file ({"key_id", "application_key"}) plus the b2_bucket
 setting are migrated into a one-account list on the first start after the
 upgrade.

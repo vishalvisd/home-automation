@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from home_automation.api.dependencies import (
     get_backblaze_credentials_service,
     get_cloud_rotation_service,
+    get_router_restart_service,
 )
 from home_automation.services.backblaze_b2_storage_provider import (
     test_account,
@@ -39,6 +40,9 @@ from home_automation.services.backblaze_credentials_service import (
 )
 from home_automation.services.cloud_rotation_service import (
     CloudRotationService,
+)
+from home_automation.services.router_restart_service import (
+    RouterRestartService,
 )
 
 router = APIRouter(
@@ -93,6 +97,11 @@ BackblazeCredentialsDependency = Annotated[
 CloudRotationDependency = Annotated[
     CloudRotationService,
     Depends(get_cloud_rotation_service),
+]
+
+RouterRestartDependency = Annotated[
+    RouterRestartService,
+    Depends(get_router_restart_service),
 ]
 
 @router.get("/settings")
@@ -302,7 +311,14 @@ def test_backblaze_account(
 @router.get("/backblaze/rotation")
 def backblaze_rotation(
     rotation: CloudRotationDependency,
+    router_restart: RouterRestartDependency,
 ) -> dict:
-    """Which account each recent day went to, and today's."""
+    """
+    Which account each recent day went to, and today's. Also the
+    state of the nightly router restart that runs at the change.
+    """
 
-    return rotation.status()
+    return {
+        **rotation.status(),
+        "router_restart": router_restart.status(),
+    }
