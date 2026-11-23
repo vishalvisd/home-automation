@@ -48,6 +48,12 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   silently changing them.
 - Commands that run on the Pi are given to the owner to run; wait for the
   output. One step at a time for hands-on work.
+- There is no automated test suite yet, by decision. When a change needs
+  a check script (a simulated disk, relay or camera), keep it in `tests/`
+  and commit it with the change.
+- There is no login, by decision: the Pi serves the home network only.
+  Do not add one, and do not expose the service beyond the LAN, without
+  the owner asking.
 - Never ask for or repeat a camera password or Backblaze key in chat.
 
 ## Workflow

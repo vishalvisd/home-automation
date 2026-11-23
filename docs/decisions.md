@@ -57,7 +57,7 @@ reached. This file is the current state.
 | Every camera: main stream to the disk, sub stream to the cloud, whatever the camera's bitrates are | Bitrates are tuned on the camera's own page, any time |
 | The day's cloud copy of all cameras together must stay under 10 GB | One free account per day |
 | An open RTSP stream on the LAN (cam4 has no stream login) is not a concern (22 Nov 2026) | Owner's call |
-| Cloud upload is tried once, then the clip is deleted, no retry queue | RAM is finite; the disk copy is the primary |
+| Cloud upload is tried once, then the clip is deleted, no retry queue | RAM is finite and the system drive must not be written to. The disk copy is the primary recording and holds everything; the cloud is the backup. Accepted with it: an internet outage leaves a gap in the cloud copy for that time. Failed uploads are counted per camera in the UI |
 | No speed-up or time-lapse on the Pi | CPU; done in the downloader on the Mac |
 | The shared camera power relay is never restarted automatically | One failing camera must not cut the others |
 
@@ -100,6 +100,14 @@ about it is the owner's decision once there is data.
 - Offers Cloud or Pi disk as the source; no automatic preference.
 - No local archive feature (cloud download costs; never wanted).
 
+## Access and testing
+
+| Decision | Reason |
+|---|---|
+| No login on the Pi page or the downloader | The Pi is reachable only from the home network; port 8000 is not forwarded and nothing is exposed to the internet. The people on that network (family and a tenant) are trusted. A login would add effort and daily inconvenience for no practical gain. Accepted with it: any device on the home network can use the page, including the addresses that edit and run automation scripts and the one that exports the Backblaze accounts to the downloader. Revisit if remote access is ever added or the network gets untrusted users; a passphrase design is kept for that day in `docs/two-tier-storage-plan.md` (Part 1) |
+| No automated test suite yet | The design is still changing quickly and a suite would be rewritten with every change. Each change is checked on the real hardware before it is trusted, and the system checks itself while running: every finished clip is probed and discarded loudly if unplayable, per-camera counters and lights show failures, and the update script checks that the service answers. A suite will be added when the design settles |
+| A check script written for a change (for example with a simulated disk or relay) is kept in `tests/` | It costs nothing extra once written, and it is the start of the suite |
+
 ## Decided against
 
 - Buying the official Pi power supply (the 45 W charger copes).
@@ -107,8 +115,6 @@ about it is the owner's decision once there is data.
 
 ## Deferred, not rejected
 
-- Passphrase login for the Pi UI and the downloader. Until then the
-  account export endpoint and the camera addresses are open on the LAN.
 - 30-second clips (with upload limit 2000 KB/s and waiting-clip cap 20).
   If done, the downloader must infer clip length per day.
 - Renaming `archive` identifiers to `disk_copy`.
