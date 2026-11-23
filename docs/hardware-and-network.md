@@ -22,6 +22,28 @@ rebuilt.
 | USB disk | Toshiba MQ01UBD100 1 TB 2.5", bus powered, ext4, label `cctv`. Mounted at `/mnt/cctv` only during batches. Parks with `hdparm -y`. SMART needs `-d sat,16`. `hdparm -C` lies on this enclosure; use `smartctl -d sat,16 -n standby -i`. |
 | Relay board, watering | See `README.md`. The camera power relay (IN3) exists but the current cameras are powered separately. |
 
+### How it is cabled (as told by the owner, 23 Nov 2026)
+
+The main ZTE router is on the roof (third floor). Its four Ethernet
+ports are all in use:
+
+| ZTE port | Goes to |
+|---|---|
+| 1 | Ground-floor router, set up as an access point. cam1 Trueview joins its Wi-Fi. |
+| 2 | First-floor router, set up as an access point. cam2 Tekzor and cam3 Hikvision (street pole) are cabled to it. |
+| 3 | cam4 BlueView, on the roof |
+| 4 | The Raspberry Pi, on the roof |
+
+So every camera reaches the Pi through the ZTE router's own ports. While
+the ZTE is off or restarting, the Pi can reach no camera and nothing is
+recorded, on the disk or in the cloud. A small switch on the roof (Pi,
+cam4 and the two access-point cables into the switch, one cable from the
+switch to the ZTE) would remove that dependence. Not installed.
+
+The router power relay is `router_power` (IN2, GPIO 3). The router is
+wired through the normally closed contact: relay OFF means powered,
+relay ON cuts its power.
+
 ## Cameras
 
 All are RTSP cameras. The two ESP32-CAMs are retired; their code path is
@@ -30,7 +52,7 @@ kept.
 | Key | Camera | Address | Main stream (disk copy, live view) | Sub stream (cloud copy) |
 |---|---|---|---|---|
 | cam1 | Trueview T18296S, Wi-Fi | 192.168.1.33, router binding, MAC 80:1d:0d:94:2a:3b | `/ch0_0.264` 2304x1296 H.265 15 fps + G.711 a-law, about 19 MB per 3 min | `/ch0_1.264` 800x448 H.265, about 3 MB per 3 min |
-| cam2 | Tekzor TZ-1W-IP-NG5SL(ADP), wired, second-floor access point | 192.168.1.36, router binding, MAC 5a:5a:02:4e:f2:1d | `/live/0/MAIN` 2304x1296 H.265 + G.711 mu-law, 7 to 30 MB per 3 min | `/live/0/SUB` 640x360 H.264 10 fps CBR 256 kbps, about 5 MB per 3 min |
+| cam2 | Tekzor TZ-1W-IP-NG5SL(ADP), wired, first-floor access point | 192.168.1.36, router binding, MAC 5a:5a:02:4e:f2:1d | `/live/0/MAIN` 2304x1296 H.265 + G.711 mu-law, 7 to 30 MB per 3 min | `/live/0/SUB` 640x360 H.264 10 fps CBR 256 kbps, about 5 MB per 3 min |
 | cam3 | Hikvision DS-2CD202RF-I, outdoor pole, 18 m Cat6 with passive 12 V injector | 192.168.1.64 static in the camera, MAC 94:e1:ac:de:95:6f | `/Streaming/Channels/101` 1920x1080 H.264 15 fps VBR max 1536 kbps, about 30 MB per 3 min, no audio hardware | `/Streaming/Channels/102` 704x576 H.264 10 fps VBR max 512 kbps, about 8 MB per 3 min |
 | cam4 | BlueView (looks like the Tekzor, different firmware), recording since 22 Nov 2026 21:00 | 192.168.1.113 static in the camera plus router binding, MAC 00:d5:0b:29:b5:5f | `/ch01.264?dev=1` 2560x1440 H.265 about 10 fps + G.711 mu-law. Measured as delivered, at night: 2.1 Mbit/s, about 48 MB per 3 min | `/ch01_sub.264?dev=1` 720x576 H.265 10 fps. The bitrate varies with the scene: measured 256 kbps at 20:06 and 104 kbps at 21:10 on 22 Nov, so 2.5 to 6.5 MB per 3 min |
 
