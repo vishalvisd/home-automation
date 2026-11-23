@@ -175,6 +175,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.automation_script_service = automation_script_service
     app.state.camera_settings_service = camera_settings_service
     app.state.camera_recorder_service = camera_recorder_service
+    app.state.camera_upload_service = camera_upload_service
     app.state.archive_service = archive_service
     app.state.camera_preset_service = camera_preset_service
     app.state.backblaze_credentials_service = backblaze_credentials_service

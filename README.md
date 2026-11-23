@@ -914,6 +914,45 @@ a stop on the cycle; disabling or removing one is skipped; past days never
 move. Each bucket carries a lifecycle rule (currently 3+1 days) so an
 account holds about one day of clips when its turn comes round again.
 
+Interrupting on purpose. Four buttons sit below the camera list:
+
+Stop Recording                stops every recorder until Start Recording.
+Stop recording for N min      the same, but recording starts again by
+                              itself after recording_stop_minutes
+                              (POST /api/cameras/recording/stop-for-a-while).
+                              Start Recording ends the wait early; Stop
+                              Recording cancels the automatic start.
+Pause uploads, upload the     POST /api/cameras/uploads/pause?mode=hold
+clips afterwards
+Pause uploads, skip the       POST /api/cameras/uploads/pause?mode=skip
+clips
+
+Both pauses last upload_pause_minutes, end by themselves, and can be ended
+early with "Resume uploads now" (POST /api/cameras/uploads/resume). They
+never touch a recorder: the disk copy goes on and the sub-stream clips keep
+closing. Pressing a pause button again starts the time afresh in the kind
+just pressed.
+
+In a "hold" pause the cloud clips wait in RAM instead of being limited by
+pending_upload_limit, and upload oldest first when the pause ends. While
+they wait, and until the backlog is gone (30 minutes at most), two limits
+apply, the oldest clip of all cameras going first: at most
+upload_pause_buffer_mb in total, and never so much that the RAM disk has
+less than twice archive_buffer_reserve_mb free, so the cloud clips give way
+before the disk copy runs short.
+
+In a "skip" pause the cloud clips are deleted as they close, so nothing
+waits and nothing is uploaded when it ends: no burst on the internet line,
+and a gap in the cloud copy that the disk copy covers. Going from "hold" to
+"skip" deletes the clips that were waiting.
+
+All three timers live in memory. A backend restart ends a pause and a
+timed stop (recording then follows recording_enabled as usual); a shutdown
+during a "hold" pause keeps only pending_upload_limit clips per camera. The
+recording status carries "upload_pause" and "stopped_until".
+tests/check_upload_pause.py and tests/check_timed_stop.py check all of this
+without a camera or the internet.
+
 Nightly router restart (router_restart_enabled, off by default). The main
 router is power-cycled once a night for its own health, at the moment the
 account changes: when the first clip of a new day is about to upload,

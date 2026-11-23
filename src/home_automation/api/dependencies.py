@@ -12,6 +12,9 @@ from home_automation.services.watering_settings_service import (
     WateringSettingsService,
 )
 
+from home_automation.services.camera_upload_service import (
+    CameraUploadService,
+)
 from home_automation.services.camera_recorder_service import (
     CameraRecorderService,
 )
@@ -70,6 +73,12 @@ def get_camera_recorder_service(
     request: Request,
 ) -> CameraRecorderService:
     return request.app.state.camera_recorder_service
+
+
+def get_camera_upload_service(
+    request: Request,
+) -> CameraUploadService:
+    return request.app.state.camera_upload_service
 
 def get_camera_preset_service(
     request: Request,

@@ -84,6 +84,44 @@ export async function stopRecording() {
   return handleResponse(response);
 }
 
+export async function stopRecordingForAWhile() {
+  const response = await fetch(
+    "/api/cameras/recording/stop-for-a-while",
+    {
+      method: "POST",
+    },
+  );
+
+  return handleResponse(response);
+}
+
+
+// mode "hold": the cloud clips wait in RAM and upload after the pause.
+// mode "skip": they are deleted, so nothing uploads afterwards.
+export async function pauseUploads(mode) {
+  const response = await fetch(
+    `/api/cameras/uploads/pause?mode=${mode}`,
+    {
+      method: "POST",
+    },
+  );
+
+  return handleResponse(response);
+}
+
+
+export async function resumeUploads() {
+  const response = await fetch(
+    "/api/cameras/uploads/resume",
+    {
+      method: "POST",
+    },
+  );
+
+  return handleResponse(response);
+}
+
+
 export async function getBackblazeAccounts() {
   const response = await fetch(
     "/api/cameras/backblaze/accounts",

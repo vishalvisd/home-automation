@@ -80,6 +80,27 @@ about it is the owner's decision once there is data.
 | No $0 spending cap; a small bill is accepted | Caps caused silent loss on 20 and 21 Nov 2026 |
 | Object layout `camN/YYYY/MM/DD/HH/cam_N_YYYY_MM_DD_HH_MM_SS.<ext>` is fixed | Another project downloads these objects |
 
+### Interrupting on purpose (23 Nov 2026)
+
+Video calls sometimes break up. The owner used to press Stop Recording
+during a call and then forget to start it again, so there are now four
+buttons, and three of them end by themselves.
+
+| Button | What it does | When to use it |
+|---|---|---|
+| Stop Recording | Stops every recorder until Start Recording | Maintenance; the only one that does not end by itself |
+| Stop recording for N min | The same, and recording starts again by itself | When everything must be quiet for a while |
+| Pause uploads, upload the clips afterwards | Only the uploads wait; clips are kept in RAM and uploaded at the end | A call, when the cloud copy should stay complete |
+| Pause uploads, skip the clips | Only the uploads stop; the cloud clips of that time are deleted | A call, when a burst of uploads afterwards is not wanted |
+
+| Decision | Reason |
+|---|---|
+| The two pauses never stop a recorder | Only the uploads share the internet line with a call. The disk copy, the primary recording, must go on |
+| In the pause that uploads afterwards, the waiting clips have a size limit (200 MB by default) and give way before the disk copy runs short of RAM | The same RAM holds the clips waiting for the disk; the disk copy comes first |
+| The pause that skips the clips leaves a gap in the cloud copy; accepted | The disk copy has that time in full quality |
+| The lengths are set in the UI: one for both pauses, one for the timed stop (20 minutes each by default) | The owner's choice per situation |
+| A backend restart ends a pause or a timed stop | A forgotten interruption must never outlive a restart |
+
 ## Router
 
 | Decision | Reason |

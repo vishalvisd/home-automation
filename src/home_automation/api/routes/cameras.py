@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -7,11 +7,15 @@ from home_automation.api.dependencies import (
     get_archive_service,
     get_camera_preset_service,
     get_camera_recorder_service,
+    get_camera_upload_service,
     get_camera_settings_service,
     get_live_view_service,
 )
 from home_automation.config.camera_settings import (
     CameraSettings,
+)
+from home_automation.services.camera_upload_service import (
+    CameraUploadService,
 )
 from home_automation.services.camera_recorder_service import (
     CameraRecorderService,
@@ -59,6 +63,11 @@ CameraSettingsDependency = Annotated[
 CameraRecorderDependency = Annotated[
     CameraRecorderService,
     Depends(get_camera_recorder_service),
+]
+
+CameraUploadDependency = Annotated[
+    CameraUploadService,
+    Depends(get_camera_upload_service),
 ]
 
 CameraPresetDependency = Annotated[
@@ -250,6 +259,42 @@ def stop_recording(
     recorder: CameraRecorderDependency,
 ) -> dict:
     return recorder.stop()
+
+
+@router.post("/recording/stop-for-a-while")
+def stop_recording_for_a_while(
+    recorder: CameraRecorderDependency,
+) -> dict:
+    """Stop recording; it starts again after recording_stop_minutes."""
+
+    return recorder.stop_for_a_while()
+
+
+@router.post("/uploads/pause")
+def pause_uploads(
+    recorder: CameraRecorderDependency,
+    uploads: CameraUploadDependency,
+    mode: Literal["hold", "skip"] = "hold",
+) -> dict:
+    """
+    Pause cloud uploads for upload_pause_minutes. Recording and the
+    disk copy go on. mode=hold: the cloud clips wait in RAM and upload
+    afterwards. mode=skip: they are deleted, so nothing uploads later.
+    """
+
+    uploads.pause_uploads(mode)
+    return recorder.status()
+
+
+@router.post("/uploads/resume")
+def resume_uploads(
+    recorder: CameraRecorderDependency,
+    uploads: CameraUploadDependency,
+) -> dict:
+    """End an upload pause now."""
+
+    uploads.resume_uploads()
+    return recorder.status()
 
 @router.get("/backblaze/accounts")
 def get_backblaze_accounts(

@@ -3,7 +3,9 @@ import {
   Camera,
   CircleStop,
   LoaderCircle,
+  Pause,
   Play,
+  Timer,
   Plus,
   Save,
   Trash2,
@@ -20,8 +22,11 @@ import {
   saveBackblazeAccounts,
   testBackblazeAccount,
   saveCameraSettings,
+  pauseUploads,
+  resumeUploads,
   startRecording,
   stopRecording,
+  stopRecordingForAWhile,
 } from "../services/cameraApi";
 
 
@@ -288,18 +293,28 @@ export default function CameraPanel() {
     setError(null);
 
     try {
-      const result =
-        command === "start"
-          ? await startRecording()
-          : await stopRecording();
+      const actions = {
+        start: [startRecording, "Recording start requested."],
+        stop: [stopRecording, "Recording stopped."],
+        stopForAWhile: [
+          stopRecordingForAWhile,
+          "Recording stopped. It starts again by itself.",
+        ],
+        pauseUploadsHold: [
+          () => pauseUploads("hold"),
+          "Cloud uploads paused; clips wait in RAM. Recording to the disk goes on.",
+        ],
+        pauseUploadsSkip: [
+          () => pauseUploads("skip"),
+          "Cloud uploads paused; clips of this time are not kept. Recording to the disk goes on.",
+        ],
+        resumeUploads: [resumeUploads, "Cloud uploads resumed."],
+      };
 
-      setStatus(result);
+      const [action, doneMessage] = actions[command];
 
-      setMessage(
-        command === "start"
-          ? "Recording start requested."
-          : "Recording stopped.",
-      );
+      setStatus(await action());
+      setMessage(doneMessage);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -405,6 +420,10 @@ export default function CameraPanel() {
   if (!settings) {
     return null;
   }
+
+  const uploadPause = status?.upload_pause;
+  const pauseMinutes = settings.upload_pause_minutes;
+  const stopMinutes = settings.recording_stop_minutes;
 
   const anyRecording =
     status?.cameras?.some(
@@ -518,6 +537,16 @@ export default function CameraPanel() {
               "segment_seconds",
               value,
             )
+          }
+        />
+
+        <NumberSetting
+          label="Stop recording for button: start again after"
+          value={settings.recording_stop_minutes}
+          suffix="minutes"
+          min={1}
+          onChange={(value) =>
+            updateSetting("recording_stop_minutes", value)
           }
         />
 
@@ -955,6 +984,26 @@ export default function CameraPanel() {
                 "b2_upload_rate_kb_s",
                 value,
               )
+            }
+          />
+
+          <NumberSetting
+            label="Pause uploads buttons: pause for"
+            value={settings.upload_pause_minutes}
+            suffix="minutes"
+            min={1}
+            onChange={(value) =>
+              updateSetting("upload_pause_minutes", value)
+            }
+          />
+
+          <NumberSetting
+            label="Pause that uploads afterwards: clips may wait in RAM up to"
+            value={settings.upload_pause_buffer_mb}
+            suffix="MB"
+            min={20}
+            onChange={(value) =>
+              updateSetting("upload_pause_buffer_mb", value)
             }
           />
         </div>
@@ -1595,7 +1644,88 @@ export default function CameraPanel() {
           <CircleStop size={17} />
           Stop Recording
         </button>
+
+        <button
+          type="button"
+          onClick={() => runCommand("stopForAWhile")}
+          disabled={pending !== null || !anyRecording}
+          title="Stops every recorder, disk copy included. Recording starts again by itself."
+          className="flex items-center gap-2 rounded-xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 disabled:opacity-50"
+        >
+          <Timer size={17} />
+          Stop recording for {stopMinutes} min
+        </button>
       </div>
+
+      <div className="mt-3 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => runCommand("pauseUploadsHold")}
+          disabled={pending !== null || !settings.b2_upload_enabled}
+          title="Recording goes on. The cloud clips wait in RAM and are uploaded when the pause ends."
+          className="flex items-center gap-2 rounded-xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 disabled:opacity-50"
+        >
+          <Pause size={17} />
+          Pause uploads {pauseMinutes} min, upload the clips afterwards
+        </button>
+
+        <button
+          type="button"
+          onClick={() => runCommand("pauseUploadsSkip")}
+          disabled={pending !== null || !settings.b2_upload_enabled}
+          title="Recording goes on. The cloud clips of this time are deleted, so nothing is uploaded afterwards. The disk copy has everything."
+          className="flex items-center gap-2 rounded-xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 disabled:opacity-50"
+        >
+          <Pause size={17} />
+          Pause uploads {pauseMinutes} min, skip the clips
+        </button>
+
+        {uploadPause?.paused && (
+          <button
+            type="button"
+            onClick={() => runCommand("resumeUploads")}
+            disabled={pending !== null}
+            className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            <Play size={17} />
+            Resume uploads now
+          </button>
+        )}
+      </div>
+
+      {status?.stopped_until && (
+        <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+          Recording is stopped until {status.stopped_until.slice(11, 16)} and
+          starts again by itself. Nothing is recorded meanwhile, on the disk
+          or in the cloud. Press Start Recording to start now, or Stop
+          Recording to keep it stopped.
+        </p>
+      )}
+
+      {uploadPause?.paused && uploadPause.mode === "skip" && (
+        <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+          Cloud uploads are paused until {uploadPause.until.slice(11, 16)}.
+          The cloud clips of this time are not kept
+          ({uploadPause.skipped} skipped so far), so nothing is uploaded
+          afterwards. Recording to the disk goes on.
+        </p>
+      )}
+
+      {uploadPause &&
+        ((uploadPause.paused && uploadPause.mode === "hold") ||
+          uploadPause.catching_up) && (
+          <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+            {uploadPause.paused
+              ? `Cloud uploads are paused until ${uploadPause.until.slice(11, 16)}. `
+              : "The pause is over; the clips that waited are being uploaded. "}
+            {uploadPause.waiting_files} clip(s), {uploadPause.waiting_mb} MB
+            waiting in RAM (limit {uploadPause.buffer_limit_mb} MB)
+            {uploadPause.dropped > 0
+              ? `; ${uploadPause.dropped} dropped because the limit was reached`
+              : ""}
+            . Recording to the disk goes on.
+          </p>
+        )}
 
       {message && (
         <p className="mt-4 text-sm text-emerald-700">

@@ -148,6 +148,18 @@ class CameraSettings(BaseModel):
         ge=1,
     )
 
+    # "Stop recording for N minutes": every recorder stops and starts
+    # again by itself after this long.
+    recording_stop_minutes: int = Field(default=20, ge=1, le=180)
+
+    # Pausing cloud uploads for a while, for example during a video
+    # call. Recording and the disk copy go on. In a "hold" pause the
+    # cloud clips wait in RAM, at most upload_pause_buffer_mb of them,
+    # and are uploaded when the pause ends. In a "skip" pause they are
+    # deleted, so nothing is uploaded afterwards either.
+    upload_pause_minutes: int = Field(default=20, ge=1, le=180)
+    upload_pause_buffer_mb: int = Field(default=200, ge=20, le=1000)
+
     # Restart the main router once a night, for its own health, at the
     # moment the day's Backblaze account changes (the first clip after
     # midnight). The router's power is cut for router_restart_off_seconds

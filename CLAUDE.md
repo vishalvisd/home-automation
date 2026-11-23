@@ -93,6 +93,14 @@ All application scheduling lives in Python threads, not cron or systemd timers.
     software encode, MPEG-TS `.ts` segments. Day/night presets apply.
   - `rtsp`: commercial IP cameras, ffmpeg with `-c:v copy` (never
     re-encode video on the Pi), audio converted to AAC, MP4 segments.
+- The two "Pause uploads" buttons act only on the cloud uploads for a
+  set time; they must never stop a recorder. One keeps the clips in RAM
+  and uploads them afterwards (limited by `upload_pause_buffer_mb`,
+  giving way before the disk copy runs short of RAM); the other deletes
+  them so nothing uploads afterwards.
+- "Stop recording for N min" stops every recorder and starts them again
+  by itself. Pauses and the timed stop live in memory only, so a backend
+  restart always ends them.
 - Uploads rotate between several Backblaze accounts, one account per
   calendar day (`CloudRotationService`, state in
   `runtime/cloud_rotation_state.json`). A past day's account never

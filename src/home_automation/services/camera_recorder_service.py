@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from datetime import datetime
 from pathlib import Path
@@ -609,6 +610,12 @@ class CameraRecorderService:
         # startup or the user presses "Start Recording".
         self._desired_running = False
 
+        # "Stop recording for N minutes": when recording starts again
+        # by itself (monotonic clock, and the same moment as a time of
+        # day for the UI). None when no such stop is running.
+        self._resume_at: float | None = None
+        self._resume_at_wall: datetime | None = None
+
         self._shutdown_event = Event()
 
         self._supervisor_thread = Thread(
@@ -687,6 +694,8 @@ class CameraRecorderService:
 
         with self._lock:
             self._desired_running = True
+            self._resume_at = None
+            self._resume_at_wall = None
 
         self._forget_stale_slots(settings)
 
@@ -700,6 +709,8 @@ class CameraRecorderService:
         # cannot restart them while Stop Recording is running.
         with self._lock:
             self._desired_running = False
+            self._resume_at = None
+            self._resume_at_wall = None
             self._next_retry_at.clear()
             self._recovery_pending_since.clear()
 
@@ -709,6 +720,43 @@ class CameraRecorderService:
             recorder.stop()
 
         return self.status()
+
+    def stop_for_a_while(self) -> dict:
+        """
+        Stop every recorder, like Stop Recording, and start them again
+        by itself after recording_stop_minutes. Start Recording ends
+        the wait early; Stop Recording cancels the automatic start.
+        The wait lives in memory: after a backend restart recording
+        follows the recording_enabled setting as usual.
+        """
+
+        minutes = self._settings_service.get().recording_stop_minutes
+
+        self.stop()
+
+        with self._lock:
+            self._resume_at = monotonic() + minutes * 60
+            self._resume_at_wall = datetime.now(
+                ZoneInfo("Asia/Kolkata")
+            ) + timedelta(minutes=minutes)
+
+        LOGGER.info(
+            "Recording stopped for %s minutes; it starts again by itself",
+            minutes,
+        )
+
+        return self.status()
+
+    def _resume_if_due(self) -> None:
+        with self._lock:
+            due = (
+                self._resume_at is not None
+                and monotonic() >= self._resume_at
+            )
+
+        if due:
+            LOGGER.info("The timed stop is over; starting recording again")
+            self.start()
 
     def start_if_enabled(self) -> None:
         settings = self._settings_service.get()
@@ -733,6 +781,11 @@ class CameraRecorderService:
 
         with self._lock:
             desired_running = self._desired_running
+            stopped_until = (
+                self._resume_at_wall.isoformat(timespec="seconds")
+                if self._resume_at_wall is not None
+                else None
+            )
 
             for camera in settings.cameras:
                 entry = self._slot_status(camera, "cloud")
@@ -770,11 +823,14 @@ class CameraRecorderService:
             "ffmpeg_available": FFMPEG_BINARY is not None,
             "recording_enabled": settings.recording_enabled,
             "desired_running": desired_running,
+            "stopped_until": stopped_until,
+            "recording_stop_minutes": settings.recording_stop_minutes,
             "recording_directory": settings.recording_directory,
             "recorder_restart_delay_seconds": (
                 settings.recorder_restart_delay_seconds
             ),
             "archive_enabled": settings.archive_enabled,
+            "upload_pause": self._upload_service.pause_status(),
             "cameras": camera_statuses,
         }
 
@@ -817,6 +873,7 @@ class CameraRecorderService:
 
         while not self._shutdown_event.is_set():
             try:
+                self._resume_if_due()
                 self._supervise_once()
 
             except Exception:
