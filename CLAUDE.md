@@ -137,6 +137,10 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - The player is go2rtc's `video-rtc.js`, vendored under
   `frontend/src/vendor`. Update it from a pinned go2rtc tag, never edit
   it by hand.
+- The player opens a WebSocket from the browser to go2rtc on port 1984.
+  The Claude desktop app's built-in browser can open the Pi page on port
+  8000 but refuses that WebSocket, so live view can only be confirmed in
+  the owner's own browser. Ask him to look.
 
 ## Relay rules that are deliberate
 

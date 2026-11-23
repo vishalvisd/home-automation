@@ -22,6 +22,17 @@ rebuilt.
 | USB disk | Toshiba MQ01UBD100 1 TB 2.5", bus powered, ext4, label `cctv`. Mounted at `/mnt/cctv` only during batches. Parks with `hdparm -y`. SMART needs `-d sat,16`. `hdparm -C` lies on this enclosure; use `smartctl -d sat,16 -n standby -i`. |
 | Relay board, watering | See `README.md`. The camera power relay (IN3) exists but the current cameras are powered separately. |
 
+### Development Mac
+
+- SSH: `ssh pi` (192.168.1.31, key `~/.ssh/id_ed25519_pi`) is the entry
+  to use. The `Host piwifi` entry in `~/.ssh/config` points at
+  192.168.1.10, an address the Pi no longer has.
+- The frontend's development server still targets the old address:
+  `frontend/.env.development` and the default in `frontend/vite.config.js`
+  say `http://192.168.1.10:8000`. A local preview therefore needs
+  `VITE_BACKEND_TARGET=http://192.168.1.31:8000`. In practice changes are
+  checked on the Pi itself after an update.
+
 ### How it is cabled (as told by the owner, 23 Nov 2026)
 
 The main ZTE router is on the roof (third floor). Its four Ethernet
@@ -48,6 +59,29 @@ ZTE's own Wi-Fi.
 The router power relay is `router_power` (IN2, GPIO 3). The router is
 wired through the normally closed contact: relay OFF means powered,
 relay ON cuts its power.
+
+### The disk-rest test script
+
+`~/drive_rest_test.sh` exists only on the Pi, in the service user's home
+folder. It was used once to confirm by ear and touch that `hdparm -y`
+really stops the disk. It is not in the repository and is not needed to
+rebuild a Pi; the disk activity log does the same job now.
+
+## Cloud accounts as they stand
+
+Seven Backblaze accounts are entered in the Pi UI; four are enabled and
+take part in the daily rotation. Three have been switched off since
+21 Nov 2026, because they refused uploads once they held 10 GB
+(`StorageCapExceeded`) and the clips of those hours never reached the
+cloud. The Test button in the UI does not detect such a cap.
+
+Before one of the three is enabled again, in that account on Backblaze's
+site:
+
+1. Raise the storage cap under Caps and Alerts.
+2. Set the bucket's lifecycle to 3 days till hide and 1 day till delete,
+   like the other buckets (these three were set to never delete).
+3. Tick "Enabled" for the account in the Pi UI and save.
 
 ## Cameras
 
