@@ -83,6 +83,16 @@ The router power relay is `router_power` (IN2, GPIO 3). The router is
 wired through the normally closed contact: relay OFF means powered,
 relay ON cuts its power.
 
+**Open, 24 Nov 2026: the relay did not cut the router's power.** The
+first nightly restart ran from 00:02:21 to 00:04:21 and reported "ok",
+but no camera lost a second: 20 clips of 20 in that hour on all eight
+recorders, no reconnect, and the steady streams (cam3, cam4) show no
+dip in size. With the router really off, the Pi can reach no camera.
+So the relay was told to switch and the router stayed powered. To be
+checked by the owner at the relay board: is the router's supply wired
+through IN2's normally closed contact, and does IN2 click when "Router
+power" is switched on in the Relay Controls tab.
+
 ### The disk-rest test script
 
 `~/drive_rest_test.sh` exists only on the Pi, in the service user's home
@@ -182,8 +192,19 @@ for cam4. Night of 22 to 23 Nov with all four cameras: about 283 MB an
 hour to the cloud (about 6.8 GB a day at the night rate) and about
 2.1 GB an hour to the disk (one 30-minute batch is about 1.07 GB).
 
+Night of 23 to 24 Nov 2026, measured per hour: the cam2 main stream
+grows through the night, from about 300 MB an hour at midnight to
+700 MB an hour between 05:00 and 06:00 (160 by day). All four cameras
+together then write about 2.5 GB an hour to the disk against 2.1 GB at
+other times, and a 30-minute batch reaches 1.25 to 1.4 GB. One batch
+that night (06:11) started early because the waiting clips passed
+`archive_buffer_limit_mb` (1300); nothing was dropped. The cloud copy
+ran at 255 to 300 MB an hour by night and about 420 by day, about
+8.3 GB a day.
+
 RAM: the Pi has 3.8 GB; `/dev/shm` (the RAM disk) is 1.9 GB. With four
-cameras one 30-minute batch is up to about 1.1 GB of waiting clips.
+cameras one 30-minute batch is about 1.1 GB of waiting clips, and up to
+1.4 GB before dawn (see above).
 
 - Each Backblaze account has 10 GB free; a day's cloud copy goes to one
   account, so the daily cloud total should stay under 10 GB.

@@ -17,7 +17,7 @@ no new APK. The Pi never uses this folder.
 | Permissions | Internet only. Android grants it without asking. No camera, microphone, storage or location |
 | Android versions | Android 8 (2017) and newer |
 | Remembered | The ticked cameras and Main/Sub, the same way a browser remembers them |
-| Full-screen button on a video | Works |
+| Full-screen button on a video | Works. The video is shown in landscape, even with the phone's auto-rotate off; leaving full screen goes back to how the phone is held |
 | In the background | The page is told it is hidden and the player closes its camera connections |
 | After more than 10 minutes in the background | The page is loaded afresh on return |
 | A link that leaves the Pi, or a download | Handed to the phone's browser |

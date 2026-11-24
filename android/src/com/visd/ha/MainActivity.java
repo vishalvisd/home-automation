@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -285,6 +286,12 @@ public class MainActivity extends Activity {
                             ViewGroup.LayoutParams.MATCH_PARENT));
             fullscreenHolder.setVisibility(View.VISIBLE);
             hideSystemBars(true);
+
+            // Every camera's picture is wider than it is tall, so a
+            // full-screen video is shown lying down, as Chrome does.
+            // Either way up, and even when the phone's auto-rotate is off.
+            setRequestedOrientation(
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         }
 
         @Override
@@ -297,6 +304,9 @@ public class MainActivity extends Activity {
         if (fullscreenView == null) {
             return;
         }
+
+        // Back to whatever way the phone is held.
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
 
         hideSystemBars(false);
         fullscreenHolder.removeView(fullscreenView);
