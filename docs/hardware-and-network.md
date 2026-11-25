@@ -89,6 +89,11 @@ The router power relay is `router_power` (IN2, GPIO 3). The router is
 wired through the normally closed contact: relay OFF means powered,
 relay ON cuts its power.
 
+cam4 takes its power from the same 12 V line as the router (owner,
+25 Nov 2026). So whenever the relay cuts the router, cam4 goes off too
+and has to start up again afterwards; expect its gap to be a little
+longer than the other cameras'. The owner accepts this.
+
 **Open, 24 Nov 2026: the relay did not cut the router's power.** The
 first nightly restart ran from 00:02:21 to 00:04:21 and reported "ok",
 but no camera lost a second: 20 clips of 20 in that hour on all eight
