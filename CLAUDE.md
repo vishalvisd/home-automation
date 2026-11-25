@@ -178,7 +178,8 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - No login for now, by the owner's choice; he plans one later. Do not
   lecture him about it. His own limit is that nobody may reach the Mac
   or other devices on the home network.
-- Do not write the full Funnel address in the repository.
+- The Funnel address is `visd-ha.tail64b203.ts.net`. It is the Android
+  app's default away address.
 - Only the owner can test from outside, on mobile data.
 
 ## Relay rules that are deliberate
@@ -199,7 +200,9 @@ It has its own `pyproject.toml`, `.venv`, `frontend/` and gitignored
 ## Android app (`android/`)
 
 A separate small app, not run on the Pi: one Java file that shows the
-Pi's own page in a web view, opened on Live View with `?tab=live`. It is
+Pi's own page in a web view, opened on Live View with `?tab=live`. It
+tries the home address first, then the Tailscale Funnel address, then
+shows its address screen. It is
 built on the Mac with `bash android/build.sh` (JDK 17 and the Android
 command-line tools, no Gradle) and copied to the phone as an APK, which
 is not committed. Keep it a plain window onto the page: internet is its

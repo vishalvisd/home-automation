@@ -49,10 +49,14 @@ If the Pi's address changes, these hold the old one:
 
 | Place | What to do |
 |---|---|
-| The Android app on each phone | Press and hold the app icon, "Pi address". The default for a new install is in `android/src/com/visd/ha/MainActivity.java` |
+| The Android app on each phone | Press and hold the app icon, "Pi address". The defaults for a new install are in `android/src/com/visd/ha/MainActivity.java` |
 | `frontend/.env.development` and `frontend/vite.config.js` | Edit both (Mac preview only) |
 | `~/.ssh/config` on the Mac, `Host pi` | Edit |
 | The downloader's Pi address setting | Change it in the downloader |
+
+The Pi's Tailscale address, `visd-ha.tail64b203.ts.net`, is held by
+the Android app in the same two places (its away address). It changes
+only if the Pi's Tailscale name or account changes.
 
 The Pi gets its address from the router by DHCP. Whether the ZTE router
 has a binding for the Pi's MAC has not been confirmed; with one, the

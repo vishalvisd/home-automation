@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Checks how the Android app tidies a typed Pi address (MainActivity
-# .tidyAddress and .hostOf). Runs on the Mac, no phone needed.
+# Checks how the Android app tidies a typed Pi address, at home and
+# away (MainActivity.tidyAddress, .tidyAwayAddress, .hostOf), and what
+# it accepts as the Pi's own answer at the home address
+# (.isPiHealthAnswer). Runs on the Mac, no phone needed.
 #
 #   bash android/build.sh && bash tests/check_android_address.sh
 
@@ -38,6 +40,31 @@ public class CheckAddress {
         }
     }
 
+    static void checkAway(String typed, String expected) {
+        String got = MainActivity.tidyAwayAddress(typed);
+        boolean ok = expected == null ? got == null : expected.equals(got);
+
+        System.out.printf(
+                "%s  away %-40s -> %s%n",
+                ok ? "ok  " : "FAIL", "\"" + typed + "\"", got);
+
+        if (!ok) {
+            failures++;
+        }
+    }
+
+    static void checkHealth(int status, String body, boolean expected) {
+        boolean got = MainActivity.isPiHealthAnswer(status, body);
+
+        System.out.printf(
+                "%s  health %d %-28s -> %s%n",
+                got == expected ? "ok  " : "FAIL", status, body, got);
+
+        if (got != expected) {
+            failures++;
+        }
+    }
+
     public static void main(String[] args) {
         check("192.168.1.31:8000", "192.168.1.31:8000");
         check("192.168.1.31", "192.168.1.31:8000");
@@ -55,6 +82,30 @@ public class CheckAddress {
         check("192.168 1.31", null);
         check("user@192.168.1.31", null);
         check("http://", null);
+
+        // The away address: no port is added, https is implied.
+        checkAway("visd-ha.example.ts.net", "visd-ha.example.ts.net");
+        checkAway("https://visd-ha.example.ts.net", "visd-ha.example.ts.net");
+        checkAway("https://visd-ha.example.ts.net/?tab=live", "visd-ha.example.ts.net");
+        checkAway("  HTTPS://visd-ha.example.ts.net/  ", "visd-ha.example.ts.net");
+        checkAway("visd-ha.example.ts.net:8443", "visd-ha.example.ts.net:8443");
+        checkAway("", null);
+        checkAway("visd ha.example.ts.net", null);
+        checkAway("https://", null);
+
+        if (!"visd-ha.example.ts.net".equals(
+                MainActivity.hostOf("visd-ha.example.ts.net"))) {
+            System.out.println("FAIL  hostOf without a port");
+            failures++;
+        }
+
+        // Only the Pi's own answer counts as "the Pi is here".
+        checkHealth(200, "{\"status\":\"healthy\"}", true);
+        checkHealth(200, "{\"status\": \"healthy\"}", true);
+        checkHealth(200, "<html>router login</html>", false);
+        checkHealth(404, "{\"status\":\"healthy\"}", false);
+        checkHealth(200, "", false);
+        checkHealth(200, null, false);
 
         if (!"192.168.1.31".equals(MainActivity.hostOf("192.168.1.31:8000"))) {
             System.out.println("FAIL  hostOf");

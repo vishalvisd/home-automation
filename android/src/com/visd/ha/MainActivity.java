@@ -30,6 +30,10 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -37,8 +41,12 @@ import java.util.regex.Pattern;
  * The whole app: one screen that shows the web page the Pi serves,
  * opened on the Live View tab.
  *
+ * The Pi has two addresses. The home one works on the home Wi-Fi. The
+ * away one is the Pi's Tailscale Funnel address and works from anywhere.
+ * The app tries home first, then away.
+ *
  * Besides the page there is one more screen, the Pi address. It appears
- * by itself when the Pi does not answer, and from "Pi address" in the
+ * by itself when neither address answers, and from "Pi address" in the
  * menu that opens when the app icon is pressed and held.
  */
 public class MainActivity extends Activity {
@@ -46,17 +54,31 @@ public class MainActivity extends Activity {
     /** Sent by the "Pi address" entry of the app icon's menu. */
     private static final String ACTION_SHOW_ADDRESS = "com.visd.ha.SHOW_ADDRESS";
 
-    /** The Pi's address when the app is first installed. */
+    /** The Pi's home address when the app is first installed. */
     private static final String DEFAULT_ADDRESS = "192.168.1.31:8000";
 
-    /** Used when an address is typed without a port. */
+    /**
+     * The Pi's address away from home when the app is first installed:
+     * its Tailscale Funnel name (scripts/install_tailscale.sh).
+     */
+    private static final String DEFAULT_AWAY_ADDRESS =
+            "visd-ha.tail64b203.ts.net";
+
+    /** Used when a home address is typed without a port. */
     private static final String DEFAULT_PORT = "8000";
 
     /** The page honours "?tab=live" and starts on Live View. */
     private static final String START_PATH = "/?tab=live";
 
-    /** How long to wait for the Pi before saying it cannot be reached. */
+    /** How long to wait for a page before saying it cannot be reached. */
     private static final long OPEN_TIMEOUT_MS = 10_000;
+
+    /**
+     * How long the Pi gets to answer at the home address before the
+     * away address is used. On the home Wi-Fi it answers at once; away
+     * from home nothing answers, and this is the whole wait.
+     */
+    private static final int HOME_CHECK_TIMEOUT_MS = 2_000;
 
     /**
      * After this long in the background the page is loaded afresh on
@@ -66,6 +88,7 @@ public class MainActivity extends Activity {
 
     private static final String SETTINGS_FILE = "settings";
     private static final String SETTING_ADDRESS = "pi_address";
+    private static final String SETTING_AWAY_ADDRESS = "away_address";
 
     /** A host name or IP address, with or without a port. */
     private static final Pattern ADDRESS_PATTERN =
@@ -79,6 +102,7 @@ public class MainActivity extends Activity {
     private View addressPanel;
     private TextView addressMessage;
     private EditText addressInput;
+    private EditText awayInput;
     private FrameLayout fullscreenHolder;
 
     /** True once the Pi's page is on the screen. */
@@ -86,6 +110,15 @@ public class MainActivity extends Activity {
 
     /** True when the page being loaded has already failed. */
     private boolean loadFailed;
+
+    /** Goes up with every opening, so an old home check is ignored. */
+    private int opening;
+
+    /** True while the page on the screen, or on its way, is the away one. */
+    private boolean usingAway;
+
+    /** The host of the address being shown, to keep its links in the app. */
+    private String currentHost = "";
 
     /** When the app went to the background, or 0 when it did not. */
     private long stoppedAt;
@@ -105,6 +138,7 @@ public class MainActivity extends Activity {
         addressPanel = findViewById(R.id.address_panel);
         addressMessage = findViewById(R.id.address_message);
         addressInput = findViewById(R.id.address_input);
+        awayInput = findViewById(R.id.away_input);
         fullscreenHolder = findViewById(R.id.fullscreen);
 
         setUpWebView();
@@ -155,7 +189,10 @@ public class MainActivity extends Activity {
                         openOutside(Uri.parse(url)));
     }
 
-    /** Loads the Pi's page from the saved address. */
+    /**
+     * Opens the Pi's page: the home address if the Pi answers there,
+     * otherwise the away address.
+     */
     private void loadPage() {
         hideKeyboard();
         addressPanel.setVisibility(View.GONE);
@@ -163,11 +200,105 @@ public class MainActivity extends Activity {
 
         pageShown = false;
         loadFailed = false;
+        handler.removeCallbacks(openTimeout);
+
+        final int thisOpening = ++opening;
+        final String home = savedAddress();
+
+        if (home.isEmpty()) {
+            openAway();
+            return;
+        }
+
+        // Asking the Pi is network work, which Android does not allow
+        // on the screen's own thread.
+        new Thread(() -> {
+            final boolean answers = piAnswersAt(home, HOME_CHECK_TIMEOUT_MS);
+
+            handler.post(() -> {
+                if (thisOpening != opening || isDestroyed()) {
+                    return;
+                }
+
+                if (answers) {
+                    openUrl("http://" + home + START_PATH, hostOf(home), false);
+                } else {
+                    openAway();
+                }
+            });
+        }).start();
+    }
+
+    /** Opens the away address, or the address screen when there is none. */
+    private void openAway() {
+        String away = savedAwayAddress();
+
+        if (away.isEmpty()) {
+            onPageFailed();
+            return;
+        }
+
+        openUrl("https://" + away + START_PATH, hostOf(away), true);
+    }
+
+    private void openUrl(String url, String host, boolean away) {
+        pageShown = false;
+        loadFailed = false;
+        usingAway = away;
+        currentHost = host;
 
         handler.removeCallbacks(openTimeout);
         handler.postDelayed(openTimeout, OPEN_TIMEOUT_MS);
 
-        webView.loadUrl("http://" + savedAddress() + START_PATH);
+        webView.loadUrl(url);
+    }
+
+    /**
+     * True when the Pi itself answers at this home address. Another
+     * network can use the same numbers for some other device, so only
+     * the Pi's own "healthy" answer counts.
+     */
+    private static boolean piAnswersAt(String address, int timeoutMs) {
+        HttpURLConnection connection = null;
+
+        try {
+            URL url = new URL("http://" + address + "/health");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(timeoutMs);
+            connection.setReadTimeout(timeoutMs);
+            connection.setUseCaches(false);
+
+            int status = connection.getResponseCode();
+            String body = "";
+
+            if (status == 200) {
+                try (InputStream in = connection.getInputStream()) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[512];
+                    int read;
+
+                    // The answer is one short line; never read much more.
+                    while (out.size() < 4096 && (read = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, read);
+                    }
+
+                    body = out.toString("UTF-8");
+                }
+            }
+
+            return isPiHealthAnswer(status, body);
+        } catch (Exception notReachable) {
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    /** The Pi's /health answers 200 with {"status":"healthy"}. */
+    static boolean isPiHealthAnswer(int status, String body) {
+        return status == 200 && body != null && body.contains("\"healthy\"");
     }
 
     /** The page has arrived: take the "Opening" text away. */
@@ -181,14 +312,30 @@ public class MainActivity extends Activity {
         statusView.setVisibility(View.GONE);
     }
 
-    /** The Pi did not answer, or answered with an error. */
+    /** The page did not come, or came with an error. */
     private void onPageFailed() {
         handler.removeCallbacks(openTimeout);
+
+        // The home address answered the check but its page failed:
+        // the away address still gets its turn.
+        if (!usingAway && !loadFailed && !currentHost.isEmpty()
+                && !savedAwayAddress().isEmpty()) {
+            webView.stopLoading();
+            openAway();
+            return;
+        }
+
         loadFailed = true;
         pageShown = false;
 
-        showAddressPanel(
-                getString(R.string.address_unreachable, savedAddress()));
+        showAddressPanel(getString(
+                R.string.address_unreachable,
+                orNone(savedAddress()),
+                orNone(savedAwayAddress())));
+    }
+
+    private String orNone(String address) {
+        return address.isEmpty() ? getString(R.string.address_none) : address;
     }
 
     private void onOpenTimeout() {
@@ -204,12 +351,26 @@ public class MainActivity extends Activity {
 
         @Override
         public void onPageCommitVisible(WebView view, String url) {
-            onPageArrived();
+            if (isCurrentPage(url)) {
+                onPageArrived();
+            }
         }
 
         @Override
         public void onPageFinished(WebView view, String url) {
-            onPageArrived();
+            if (isCurrentPage(url)) {
+                onPageArrived();
+            }
+        }
+
+        /**
+         * When the home page fails and the away one is opened instead,
+         * the web view can still report the end of the home one. Only
+         * the address being opened now counts.
+         */
+        private boolean isCurrentPage(String url) {
+            return url != null
+                    && currentHost.equalsIgnoreCase(Uri.parse(url).getHost());
         }
 
         @Override
@@ -241,7 +402,7 @@ public class MainActivity extends Activity {
             Uri target = request.getUrl();
 
             // Stay inside the app for anything on the Pi.
-            if (hostOf(savedAddress()).equalsIgnoreCase(target.getHost())) {
+            if (currentHost.equalsIgnoreCase(target.getHost())) {
                 return false;
             }
 
@@ -364,7 +525,7 @@ public class MainActivity extends Activity {
         Button open = findViewById(R.id.address_open);
         open.setOnClickListener(view -> saveAddressAndOpen());
 
-        addressInput.setOnEditorActionListener((view, action, event) -> {
+        awayInput.setOnEditorActionListener((view, action, event) -> {
             if (action == EditorInfo.IME_ACTION_GO) {
                 saveAddressAndOpen();
                 return true;
@@ -381,27 +542,60 @@ public class MainActivity extends Activity {
         addressMessage.setText(message);
         addressInput.setText(savedAddress());
         addressInput.setError(null);
+        awayInput.setText(savedAwayAddress());
+        awayInput.setError(null);
         addressPanel.setVisibility(View.VISIBLE);
     }
 
+    /**
+     * Saves both addresses and opens the page. Either field may be left
+     * empty, which means "do not try this one"; both empty is refused.
+     */
     private void saveAddressAndOpen() {
-        String address = tidyAddress(addressInput.getText().toString());
+        String typedHome = addressInput.getText().toString().trim();
+        String typedAway = awayInput.getText().toString().trim();
 
-        if (address == null) {
+        String home = typedHome.isEmpty() ? "" : tidyAddress(typedHome);
+        String away = typedAway.isEmpty() ? "" : tidyAwayAddress(typedAway);
+
+        addressInput.setError(null);
+        awayInput.setError(null);
+
+        if (home == null) {
             addressInput.setError(getString(R.string.address_invalid));
             return;
         }
 
-        settings().edit().putString(SETTING_ADDRESS, address).apply();
+        if (away == null) {
+            awayInput.setError(getString(R.string.away_invalid));
+            return;
+        }
+
+        if (home.isEmpty() && away.isEmpty()) {
+            addressInput.setError(getString(R.string.address_both_empty));
+            return;
+        }
+
+        settings().edit()
+                .putString(SETTING_ADDRESS, home)
+                .putString(SETTING_AWAY_ADDRESS, away)
+                .apply();
         loadPage();
     }
 
     /**
-     * Turns what was typed into "host:port", or null when it is not an
-     * address. "http://" in front and anything after a "/" are dropped.
-     * The Pi serves plain HTTP only, so the app always uses http.
+     * Turns what was typed for the away address into "host" or
+     * "host:port", or null when it is not an address. "https://" in
+     * front and anything after a "/" are dropped. No port is added: the
+     * away address is always opened with https, whose own port is right.
      */
-    static String tidyAddress(String typed) {
+    static String tidyAwayAddress(String typed) {
+        String address = stripSchemeAndPath(typed);
+
+        return ADDRESS_PATTERN.matcher(address).matches() ? address : null;
+    }
+
+    private static String stripSchemeAndPath(String typed) {
         String address = typed.trim();
         String lower = address.toLowerCase(Locale.ROOT);
 
@@ -413,9 +607,17 @@ public class MainActivity extends Activity {
 
         int slash = address.indexOf('/');
 
-        if (slash >= 0) {
-            address = address.substring(0, slash);
-        }
+        return slash >= 0 ? address.substring(0, slash) : address;
+    }
+
+    /**
+     * Turns what was typed for the home address into "host:port", or
+     * null when it is not an address. "http://" in front and anything
+     * after a "/" are dropped. At home the Pi serves plain HTTP only,
+     * so the home address is always opened with http.
+     */
+    static String tidyAddress(String typed) {
+        String address = stripSchemeAndPath(typed);
 
         if (!ADDRESS_PATTERN.matcher(address).matches()) {
             return null;
@@ -438,8 +640,15 @@ public class MainActivity extends Activity {
         return getSharedPreferences(SETTINGS_FILE, Context.MODE_PRIVATE);
     }
 
+    /** The home address, or "" when the owner emptied the field. */
     private String savedAddress() {
         return settings().getString(SETTING_ADDRESS, DEFAULT_ADDRESS);
+    }
+
+    /** The away address, or "" when the owner emptied the field. */
+    private String savedAwayAddress() {
+        return settings().getString(
+                SETTING_AWAY_ADDRESS, DEFAULT_AWAY_ADDRESS);
     }
 
     private void hideKeyboard() {
@@ -448,6 +657,7 @@ public class MainActivity extends Activity {
 
         if (keyboard != null) {
             keyboard.hideSoftInputFromWindow(addressInput.getWindowToken(), 0);
+            keyboard.hideSoftInputFromWindow(awayInput.getWindowToken(), 0);
         }
     }
 

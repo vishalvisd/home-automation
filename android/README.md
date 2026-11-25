@@ -11,9 +11,10 @@ no new APK. The Pi never uses this folder.
 
 | Thing | Detail |
 |---|---|
-| Page it opens | `http://<Pi address>/?tab=live` |
-| Pi address | A setting, `192.168.1.31:8000` when first installed |
-| Where it works | On the home Wi-Fi only. The Pi is not reachable from outside, by decision |
+| Page it opens | `http://<home address>/?tab=live` at home, `https://<away address>/?tab=live` anywhere else |
+| Home address | A setting, `192.168.1.31:8000` when first installed |
+| Away address | A setting, the Pi's Tailscale Funnel name `visd-ha.tail64b203.ts.net` when first installed |
+| Where it works | Anywhere with an internet connection. At home it does not need the internet |
 | Permissions | Internet only. Android grants it without asking. No camera, microphone, storage or location |
 | Android versions | Android 8 (2017) and newer |
 | Remembered | The ticked cameras and Main/Sub, the same way a browser remembers them |
@@ -24,12 +25,31 @@ no new APK. The Pi never uses this folder.
 
 ### The Pi address screen
 
-It appears by itself when the Pi does not answer within 10 seconds, with
-the address ready to edit and an Open button to try again. To reach it at
-any other time, press and hold the app icon and choose "Pi address".
+It has two fields, the home address and the away address, and an Open
+button. It appears by itself when neither address gives the page. To
+reach it at any other time, press and hold the app icon and choose
+"Pi address". What is typed there is used from then on. Either field
+may be left empty, which means that address is not tried.
 
-Type the address with or without the port (`192.168.1.31` means port
-8000). The Pi serves plain HTTP only, so the app always uses `http://`.
+Type the home address with or without the port (`192.168.1.31` means
+port 8000); it is always opened with `http://`. The away address is
+always opened with `https://`.
+
+### Which address it uses
+
+Every time the page is opened (on starting the app, and on coming back
+after more than 10 minutes in the background):
+
+1. The app asks the home address for `/health` and waits up to 2
+   seconds. Only the Pi's own answer counts, because another network
+   can use the same numbers for some other device.
+2. If the Pi answered, the home page is opened. If that page then
+   fails, the away address is tried.
+3. If the Pi did not answer, the away address is opened.
+4. If that gives no page within 10 seconds, the address screen appears.
+
+The ticked cameras and Main/Sub are remembered separately for the two
+addresses, as a browser would.
 
 Because the address is a setting, Android is told the app may use plain
 HTTP with any address. The app only ever opens the address typed here.
@@ -74,7 +94,8 @@ The result is `android/build/visd-HA.apk`. It is not committed.
 The tool locations and the Android versions are in `tools.sh`.
 
 The app cannot be run on the Mac; it is tried on a phone. One part can
-be checked without a phone, how a typed address is tidied:
+be checked without a phone, how a typed address is tidied and what
+counts as the Pi's own answer:
 
 ```bash
 bash tests/check_android_address.sh
@@ -91,7 +112,7 @@ bash tests/check_android_address.sh
 4. Developer settings are not needed. They are only for installing over
    a USB cable with `adb`.
 
-A newer APK installs over the old one and keeps the address and the
+A newer APK installs over the old one and keeps the addresses and the
 ticked cameras.
 
 ## The signing key

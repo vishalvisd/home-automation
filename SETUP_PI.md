@@ -93,8 +93,9 @@ Without it the Pi is signed out after 180 days and the address stops
 working.
 
 `sudo tailscale funnel status` on the Pi shows the address and the two
-rules. The full address is not written in this repository on purpose:
-it opens a page that has no login.
+rules. The address is `https://visd-ha.tail64b203.ts.net`. The Android
+app has it as its default away address; if it ever changes, see "Where
+the Pi's address is written down" in `docs/hardware-and-network.md`.
 
 To close the page to the internet again (Tailscale stays installed):
 
