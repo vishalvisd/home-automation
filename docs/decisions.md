@@ -128,6 +128,22 @@ buttons, and three of them end by themselves.
 | No automated test suite yet | The design is still changing quickly and a suite would be rewritten with every change. Each change is checked on the real hardware before it is trusted, and the system checks itself while running: every finished clip is probed and discarded loudly if unplayable, per-camera counters and lights show failures, and the update script checks that the service answers. A suite will be added when the design settles |
 | A check script written for a change (for example with a simulated disk or relay) is kept in `tests/` | It costs nothing extra once written, and it is the start of the suite |
 
+## Remote access (being explored since 25 Nov 2026)
+
+The owner wants to open the Pi page from anywhere in the world, switch
+things from there and watch live view. Nothing is built yet. Decided so
+far:
+
+| Decision | Reason |
+|---|---|
+| It must work on any device in any browser, with nothing to install or set up on that device | The owner's requirement |
+| No private-network app on the phones (Tailscale, WireGuard and the like) | With such an app on his phone, his office app and some bank apps complain |
+| No port forwarding, nothing opened inbound on the ZTE router | He wants no way from the internet into the home network. The line has no fixed public address either |
+| No login while this is being built; login and other protection are added later | Owner's call. He does not mind much if someone reaches the Pi page. What he does mind is anyone reaching the Mac or other devices on the home network |
+
+The "No login" row under Access and testing still describes the Pi as it
+runs today. Rewrite it when remote access is switched on.
+
 ## Android app (23 Nov 2026)
 
 The owner wants one tap on the phone to show the four cameras, without
