@@ -138,6 +138,7 @@ far:
 |---|---|
 | It must work on any device in any browser, with nothing to install or set up on that device | The owner's requirement |
 | No private-network app on the phones (Tailscale, WireGuard and the like) | With such an app on his phone, his office app and some bank apps complain |
+| The way in is Tailscale Funnel, running on the Pi alone (25 Nov 2026) | The Pi keeps a connection open to Tailscale's relay and a browser anywhere reaches the page through it. Free, no domain, nothing on the phone, no router change, and the HTTPS lock is opened on the Pi, not at the relay. Not built yet |
 | Tailscale on the Pi alone is acceptable (25 Nov 2026) | Only the app on a phone causes the trouble above |
 | No extra spend at all: no paid domain, no rented server (25 Nov 2026) | The owner's condition. A free domain would be acceptable if a dependable one exists |
 | No port forwarding, nothing opened inbound on the ZTE router | He wants no way from the internet into the home network. The line has no fixed public address either |
