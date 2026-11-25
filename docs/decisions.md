@@ -107,6 +107,7 @@ buttons, and three of them end by themselves.
 |---|---|
 | The main router is power-cycled once a night, at the moment the day's Backblaze account changes (just after midnight), through the `router_power` relay (23 Nov 2026) | For the router's own health. Midnight is the safest time: streets still active, no office calls (the owner works 2 PM to 10 PM, sometimes 11 PM), thefts have happened around 1 AM |
 | About two minutes without recording on all cameras during that restart is accepted (23 Nov 2026) | Every camera reaches the Pi through the router's own ports |
+| The real gap of the nightly restart is about 4 minutes 40 seconds per camera, and that is accepted too (26 Nov 2026) | Measured on the first real restart. The clip being written when the power goes is deleted when the recorder starts again, which adds about 2 minutes 45 seconds from before the router went off. Finishing the clips just before the power cut would save them; the owner chose to leave it as it is |
 | No separate network switch on the roof (23 Nov 2026) | Considered and declined by the owner; the nightly gap is acceptable to him |
 | Power off 30 seconds, then hold uploads at least 1 minute (owner's figures); after that wait until the internet answers, 5 minutes at most (23 Nov 2026) | A fibre router can need more than a minute; an upload that fails is deleted, not retried |
 | The restart runs only in the hour after midnight; if the Pi was off at midnight that night is skipped (23 Nov 2026) | The internet must never be cut during the day or the owner's office hours |

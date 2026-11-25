@@ -126,7 +126,7 @@ power went (23:58 to 00:01) is lost, because a recorder that starts
 again deletes the unfinished file it finds
 (`_discard_leftover_files` in `rtsp_ffmpeg_recorder.py`). So about
 2 minutes 45 seconds of the gap is footage from before the router went
-off. Whether to keep that clip is an open question for the owner.
+off. The owner chose on 26 Nov 2026 to leave it as it is.
 
 **Switching the router relay by hand.** Relay ON for the router is a
 kill switch: once the router is off, the phone or Mac can no longer
