@@ -88,10 +88,30 @@ first nightly restart ran from 00:02:21 to 00:04:21 and reported "ok",
 but no camera lost a second: 20 clips of 20 in that hour on all eight
 recorders, no reconnect, and the steady streams (cam3, cam4) show no
 dip in size. With the router really off, the Pi can reach no camera.
-So the relay was told to switch and the router stayed powered. To be
-checked by the owner at the relay board: is the router's supply wired
-through IN2's normally closed contact, and does IN2 click when "Router
-power" is switched on in the Relay Controls tab.
+So the relay was told to switch and the router stayed powered. The
+cause (owner, 24 Nov): he had bypassed the relay himself some time ago,
+so the router's supply did not pass through IN2 at all. He began
+putting it back on 24 Nov; the restart of 25 Nov 00:00 still had no
+effect. Until a test shows the router going dark, the nightly restart
+does nothing.
+
+**Testing the router relay by hand.** Never switch "Router power" on
+from the Relay Controls tab or with a request from another device: once
+the router is off, the phone or Mac can no longer reach the Pi to switch
+it off again, and the router stays dark until someone goes to the Pi.
+The test has to run on the Pi itself and finish by itself, even if the
+SSH session drops when the router goes off:
+
+```bash
+sudo sh -c 'nohup sh -c "pinctrl set 3 op dl; sleep 10; pinctrl set 3 op dh" >/dev/null 2>&1 &'
+```
+
+GPIO 3 low is relay ON (the board is active-low), which cuts the
+router's power; ten seconds later GPIO 3 high releases the relay. It
+works whether the backend is running or stopped, and leaves the pin as
+the backend expects it (relay OFF). Every camera loses about two
+minutes while the router starts, and cloud clips that finish in that
+time fail to upload.
 
 ### The disk-rest test script
 
