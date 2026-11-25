@@ -1,3 +1,6 @@
+import { buildLiveStreamUrl } from "./liveUrl";
+
+
 async function handleResponse(response) {
   if (response.ok) {
     return response.json();
@@ -31,13 +34,14 @@ export async function syncLiveView() {
 }
 
 
-// Where the browser connects for video. go2rtc runs on the Pi next to
-// the backend, so in production it is the same host on its own port.
+// Where the browser connects for video; the rules are in liveUrl.js.
 // During `npm run dev` the page is served from the Mac, so the host can
 // be overridden with VITE_LIVE_HOST.
 export function liveStreamUrl(port, streamKey) {
-  const host =
-    import.meta.env.VITE_LIVE_HOST || window.location.hostname;
-
-  return `http://${host}:${port}/api/ws?src=${encodeURIComponent(streamKey)}`;
+  return buildLiveStreamUrl(
+    window.location,
+    port,
+    streamKey,
+    import.meta.env.VITE_LIVE_HOST,
+  );
 }

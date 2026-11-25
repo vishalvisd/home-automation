@@ -50,9 +50,11 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - There is no automated test suite yet, by decision. When a change needs
   a check script (a simulated disk, relay or camera), keep it in `tests/`
   and commit it with the change.
-- There is no login, by decision: the Pi serves the home network only.
-  Do not add one, and do not expose the service beyond the LAN, without
-  the owner asking.
+- There is no login, by decision. Since 25 Nov 2026 the owner also wants
+  the page reachable from the internet, through Tailscale Funnel on the
+  Pi only (see "Remote access" below). Do not add a login, and do not
+  expose anything more than that section lists, without the owner
+  asking.
 - Never ask for or repeat a camera password or Backblaze key in chat.
 
 ## Workflow
@@ -154,10 +156,30 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - The player is go2rtc's `video-rtc.js`, vendored under
   `frontend/src/vendor`. Update it from a pinned go2rtc tag, never edit
   it by hand.
-- The player opens a WebSocket from the browser to go2rtc on port 1984.
+- The player opens a WebSocket from the browser to go2rtc: on port 1984
+  at home, and on the page's own address when the page is `https`
+  (`frontend/src/services/liveUrl.js`, checked by
+  `tests/check_live_url.mjs`).
   The Claude desktop app's built-in browser can open the Pi page on port
   8000 but refuses that WebSocket, so live view can only be confirmed in
   the owner's own browser. Ask him to look.
+
+## Remote access
+
+- The page is reachable from the internet through Tailscale Funnel,
+  which runs on the Pi only (`scripts/install_tailscale.sh`, steps in
+  `SETUP_PI.md`). The Pi dials out to Tailscale's relay; nothing is
+  opened on the router. The owner rules out port forwarding, a paid
+  domain or server, and any Tailscale or VPN app on a phone.
+- Public, on port 443 of the Funnel address: `/` (the page and API on
+  port 8000) and `/api/ws` (go2rtc's video connection). Never publish
+  the rest of go2rtc's port 1984: its own page hands out the stream
+  addresses with the camera logins.
+- No login for now, by the owner's choice; he plans one later. Do not
+  lecture him about it. His own limit is that nobody may reach the Mac
+  or other devices on the home network.
+- Do not write the full Funnel address in the repository.
+- Only the owner can test from outside, on mobile data.
 
 ## Relay rules that are deliberate
 

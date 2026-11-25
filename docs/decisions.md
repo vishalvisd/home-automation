@@ -138,14 +138,22 @@ far:
 |---|---|
 | It must work on any device in any browser, with nothing to install or set up on that device | The owner's requirement |
 | No private-network app on the phones (Tailscale, WireGuard and the like) | With such an app on his phone, his office app and some bank apps complain |
-| The way in is Tailscale Funnel, running on the Pi alone (25 Nov 2026) | The Pi keeps a connection open to Tailscale's relay and a browser anywhere reaches the page through it. Free, no domain, nothing on the phone, no router change, and the HTTPS lock is opened on the Pi, not at the relay. Not built yet |
+| The way in is Tailscale Funnel, running on the Pi alone (25 Nov 2026) | The Pi keeps a connection open to Tailscale's relay and a browser anywhere reaches the page through it. Free, no domain, nothing on the phone, no router change, and the HTTPS lock is opened on the Pi, not at the relay. Set up with `scripts/install_tailscale.sh` |
+| Two things are public: the page with its API, and go2rtc's video connection `/api/ws`. The rest of go2rtc's port stays inside the home network (25 Nov 2026) | go2rtc's own page hands out the stream addresses with the camera logins |
+| The Pi's name on Tailscale is `visd-ha`; the full address is not written in the repository (25 Nov 2026) | The name is listed in a public register of certificates, so it says nothing private. The address opens a page with no login |
+| Tailscale may not change the Pi's name lookups (`--accept-dns=false`) | Recording and uploads must not depend on anything set in Tailscale |
 | Tailscale on the Pi alone is acceptable (25 Nov 2026) | Only the app on a phone causes the trouble above |
 | No extra spend at all: no paid domain, no rented server (25 Nov 2026) | The owner's condition. A free domain would be acceptable if a dependable one exists |
 | No port forwarding, nothing opened inbound on the ZTE router | He wants no way from the internet into the home network. The line has no fixed public address either |
 | No login while this is being built; login and other protection are added later | Owner's call. He does not mind much if someone reaches the Pi page. What he does mind is anyone reaching the Mac or other devices on the home network |
 
-The "No login" row under Access and testing still describes the Pi as it
-runs today. Rewrite it when remote access is switched on.
+Still open: the Android app (it forces `http` and port 8000), the sub
+stream as the default from outside, keeping script editing and the
+Backblaze export away from outside visitors, and the login.
+
+The "No login" row under Access and testing describes the Pi before the
+install script has been run. Once it has, the page is reachable from the
+internet without a login, by the owner's choice above.
 
 ## Android app (23 Nov 2026)
 

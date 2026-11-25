@@ -19,6 +19,7 @@ rebuilt.
 | UPS | 600 VA desktop UPS for the Pi, cameras and router. Nothing tells the Pi when the battery is low. |
 | Main router | ZTE F670L at 192.168.1.5. DHCP bindings are made in its admin page. Internet 100 Mbps. |
 | Internet line | Basic unlimited 100 Mbps plan, no fixed public address; it can change at any time (owner). Checked from the Mac on 25 Nov 2026: a trace to the public address is passed on by the ZTE, which suggests the provider shares one address between customers. Not confirmed on the ZTE's own page. The line also has IPv6. |
+| Remote access | Tailscale Funnel on the Pi, machine name `visd-ha`, set up with `scripts/install_tailscale.sh` (see `SETUP_PI.md`). Public port 443 only: `/` goes to the page on :8000, `/api/ws` to go2rtc's video connection on :1984. `sudo tailscale funnel status` on the Pi shows the address. Key expiry for the Pi must be disabled on Tailscale's site. Not yet run on the Pi as of 25 Nov 2026. |
 | Access points | D-Link DIR-615 at 192.168.1.7, TP-Link Deco at 192.168.1.14. |
 | USB disk | Toshiba MQ01UBD100 1 TB 2.5", bus powered, ext4, label `cctv`. Mounted at `/mnt/cctv` only during batches. Parks with `hdparm -y`. SMART needs `-d sat,16`. `hdparm -C` lies on this enclosure; use `smartctl -d sat,16 -n standby -i`. |
 | Relay board, watering | See `README.md`. The camera power relay (IN3) exists but the current cameras are powered separately. |

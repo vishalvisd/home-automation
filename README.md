@@ -170,6 +170,7 @@ home-automation/
 │   ├── update_pi.sh            # Normal safe deployment/update
 │   ├── install_service.sh      # Writes the systemd unit (called by setup, rerun when it changes)
 │   ├── install_go2rtc.sh       # One-time go2rtc install for live view
+│   ├── install_tailscale.sh    # Optional: reach the page from the internet (Tailscale Funnel)
 │   ├── install_archive.sh      # One-time USB disk (disk copy) setup
 │   ├── find_camera.py          # Desk tool: find a camera on the LAN, get its RTSP URL
 │   └── test_relays.py          # Sequential relay hardware test

@@ -69,6 +69,43 @@ bash scripts/install_service.sh
 bash scripts/install_go2rtc.sh
 ```
 
+### Reaching the page from the internet (Tailscale Funnel)
+
+Optional. It makes the Pi's page reachable from anywhere at
+`https://visd-ha.<tailnet>.ts.net`, with no login, through Tailscale's
+relay. Tailscale runs on the Pi only; nothing is opened on the router.
+How it works and what is public is written at the top of the script.
+
+```bash
+bash scripts/install_tailscale.sh
+```
+
+The script stops twice to wait for the owner:
+
+1. It prints a sign-in link. Open it in any browser and sign in with
+   the owner's existing Tailscale account.
+2. The first time Funnel is used on an account, it prints a second link
+   to allow Funnel and HTTPS certificates. Open it and approve.
+
+Then, once, on Tailscale's site (`login.tailscale.com`, Machines): open
+the menu at the right of `visd-ha` and choose "Disable key expiry".
+Without it the Pi is signed out after 180 days and the address stops
+working.
+
+`sudo tailscale funnel status` on the Pi shows the address and the two
+rules. The full address is not written in this repository on purpose:
+it opens a page that has no login.
+
+To close the page to the internet again (Tailscale stays installed):
+
+```bash
+bash scripts/install_tailscale.sh off
+```
+
+On a rebuilt Pi, delete the old `visd-ha` machine on Tailscale's site
+before running the script, or the new one is named `visd-ha-1` and the
+address changes.
+
 ### Archive disk
 
 Format the USB disk once, with the label `cctv`. This erases it. Find
