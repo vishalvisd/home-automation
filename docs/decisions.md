@@ -138,6 +138,8 @@ far:
 |---|---|
 | It must work on any device in any browser, with nothing to install or set up on that device | The owner's requirement |
 | No private-network app on the phones (Tailscale, WireGuard and the like) | With such an app on his phone, his office app and some bank apps complain |
+| Tailscale on the Pi alone is acceptable (25 Nov 2026) | Only the app on a phone causes the trouble above |
+| No extra spend at all: no paid domain, no rented server (25 Nov 2026) | The owner's condition. A free domain would be acceptable if a dependable one exists |
 | No port forwarding, nothing opened inbound on the ZTE router | He wants no way from the internet into the home network. The line has no fixed public address either |
 | No login while this is being built; login and other protection are added later | Owner's call. He does not mind much if someone reaches the Pi page. What he does mind is anyone reaching the Mac or other devices on the home network |
 
