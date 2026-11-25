@@ -112,6 +112,22 @@ first nightly restart that can really work is the one of 26 Nov 00:00;
 expect about two minutes without recording on every camera and one
 recovery per recorder.
 
+**First real nightly restart, 26 Nov 2026.** Started 00:01:02, power off
+30 seconds, finished 00:03:02, result "ok". The Mac could not reach the
+Pi from 00:01:11 to 00:02:19. All eight recorders were connected again
+between 00:02:34 and 00:03:04; cam4, which loses its power with the
+router, at 00:02:48. The first uploads of the day went to the new
+account without a failure.
+
+The gap is longer than the two minutes expected: about 4 minutes 40
+seconds on every camera. The last clip before it ended at about 23:58
+and the next began at about 00:03. The clip being written when the
+power went (23:58 to 00:01) is lost, because a recorder that starts
+again deletes the unfinished file it finds
+(`_discard_leftover_files` in `rtsp_ffmpeg_recorder.py`). So about
+2 minutes 45 seconds of the gap is footage from before the router went
+off. Whether to keep that clip is an open question for the owner.
+
 **Switching the router relay by hand.** Relay ON for the router is a
 kill switch: once the router is off, the phone or Mac can no longer
 reach the Pi to switch the relay off again, and the router stays dark
