@@ -5,6 +5,9 @@ from home_automation.services.watering_service import WateringService
 from home_automation.services.automation_script_service import (
     AutomationScriptService,
 )
+from home_automation.services.automation_passphrase_service import (
+    AutomationPassphraseService,
+)
 from home_automation.services.watering_scheduler_service import (
     WateringSchedulerService,
 )
@@ -63,6 +66,12 @@ def get_automation_script_service(
     request: Request,
 ) -> AutomationScriptService:
     return request.app.state.automation_script_service
+
+
+def get_automation_passphrase_service(
+    request: Request,
+) -> AutomationPassphraseService:
+    return request.app.state.automation_passphrase_service
 
 def get_camera_settings_service(
     request: Request,

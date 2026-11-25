@@ -12,6 +12,7 @@ from home_automation.api.routes import (
     watering,
 )
 from home_automation.config.application import (
+    AUTOMATION_PASSPHRASE_FILE,
     AUTOMATION_RUNTIME_DIRECTORY,
     AUTOMATION_TEMPLATE_DIRECTORY,
     CAMERA_PRESET_STATE_FILE,
@@ -30,6 +31,9 @@ from home_automation.config.application import (
 from home_automation.config.logging import configure_logging
 from home_automation.services.archive_service import ArchiveService
 from home_automation.services.disk_activity_log import DiskActivityLog
+from home_automation.services.automation_passphrase_service import (
+    AutomationPassphraseService,
+)
 from home_automation.services.automation_script_service import (
     AutomationScriptService,
 )
@@ -100,6 +104,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     automation_script_service = AutomationScriptService(
         AUTOMATION_TEMPLATE_DIRECTORY,
         AUTOMATION_RUNTIME_DIRECTORY,
+    )
+
+    automation_passphrase_service = AutomationPassphraseService(
+        AUTOMATION_PASSPHRASE_FILE
     )
 
     camera_settings_service = CameraSettingsService(
@@ -173,6 +181,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.watering_service = watering_service
     app.state.watering_scheduler_service = watering_scheduler_service
     app.state.automation_script_service = automation_script_service
+    app.state.automation_passphrase_service = automation_passphrase_service
     app.state.camera_settings_service = camera_settings_service
     app.state.camera_recorder_service = camera_recorder_service
     app.state.camera_upload_service = camera_upload_service

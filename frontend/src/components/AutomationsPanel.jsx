@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Lock,
   Play,
   RefreshCw,
   RotateCcw,
@@ -8,11 +9,16 @@ import {
 } from "lucide-react";
 
 import {
+  createPassphrase,
+  forgetPassphrase,
   getAutomation,
   getAutomations,
+  getPassphraseState,
+  hasPassphrase,
   restoreAutomation,
   runAutomation,
   saveAutomation,
+  unlock,
 } from "../services/automationApi";
 
 
@@ -24,6 +30,89 @@ export default function AutomationsPanel() {
   const [pending, setPending] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+
+  // The scripts are behind a passphrase, checked by the backend.
+  //   "checking"  asking the backend whether one has been set
+  //   "unset"     none yet: this visit sets it
+  //   "locked"    one is set: ask for it
+  //   "open"      accepted: show the scripts
+  const [gate, setGate] = useState("checking");
+  const [typed, setTyped] = useState("");
+  const [typedAgain, setTypedAgain] = useState("");
+  const [gateError, setGateError] = useState(null);
+  const [gateBusy, setGateBusy] = useState(false);
+
+  // The backend no longer accepts the passphrase (it was changed on
+  // the Pi, or removed): back to the passphrase screen.
+  function lockIfRefused(requestError) {
+    if (requestError.status === 401 || requestError.status === 403) {
+      forgetPassphrase();
+      setGate(requestError.status === 403 ? "unset" : "locked");
+      setDetails(null);
+      setAutomations([]);
+      setSelected(null);
+      return true;
+    }
+
+    return false;
+  }
+
+  function showError(requestError) {
+    if (!lockIfRefused(requestError)) {
+      setError(requestError.message);
+    }
+  }
+
+  async function checkGate() {
+    try {
+      const state = await getPassphraseState();
+
+      if (!state.set) {
+        setGate("unset");
+      } else if (hasPassphrase()) {
+        setGate("open");
+        await loadList();
+      } else {
+        setGate("locked");
+      }
+    } catch (requestError) {
+      setGateError(requestError.message);
+    }
+  }
+
+  async function submitPassphrase(event) {
+    event.preventDefault();
+
+    if (gate === "unset" && typed !== typedAgain) {
+      setGateError("The two passphrases are not the same.");
+      return;
+    }
+
+    setGateBusy(true);
+    setGateError(null);
+
+    try {
+      if (gate === "unset") {
+        await createPassphrase(typed);
+      } else {
+        await unlock(typed);
+      }
+
+      setTyped("");
+      setTypedAgain("");
+      setGate("open");
+      await loadList();
+    } catch (requestError) {
+      // 409: someone set one in the meantime. Ask for it instead.
+      if (requestError.status === 409) {
+        setGate("locked");
+      }
+
+      setGateError(requestError.message);
+    } finally {
+      setGateBusy(false);
+    }
+  }
 
   async function loadList() {
     const items = await getAutomations();
@@ -56,7 +145,7 @@ export default function AutomationsPanel() {
       setMessage("Runtime script saved.");
       setError(null);
     } catch (requestError) {
-      setError(requestError.message);
+      showError(requestError);
     } finally {
       setPending(null);
     }
@@ -75,7 +164,7 @@ export default function AutomationsPanel() {
       setMessage("Factory script restored.");
       setError(null);
     } catch (requestError) {
-      setError(requestError.message);
+      showError(requestError);
     } finally {
       setPending(null);
     }
@@ -93,7 +182,7 @@ export default function AutomationsPanel() {
       setMessage(`${result.name} started.`);
       setError(null);
     } catch (requestError) {
-      setError(requestError.message);
+      showError(requestError);
     } finally {
       setPending(null);
     }
@@ -104,17 +193,19 @@ export default function AutomationsPanel() {
       return;
     }
 
-    const result = await getAutomation(selected);
+    try {
+      const result = await getAutomation(selected);
 
-    setDetails(result);
+      setDetails(result);
+    } catch (requestError) {
+      showError(requestError);
+    }
 
     // Do not overwrite unsaved editor contents.
   }
 
   useEffect(() => {
-    loadList().catch((requestError) => {
-      setError(requestError.message);
-    });
+    checkGate().catch(showError);
   }, []);
 
   return (
@@ -134,6 +225,70 @@ export default function AutomationsPanel() {
           </p>
         </div>
       </div>
+
+      {gate === "checking" && gateError && (
+        <p className="mt-6 text-sm text-red-700">{gateError}</p>
+      )}
+
+      {(gate === "unset" || gate === "locked") && (
+        <form
+          onSubmit={submitPassphrase}
+          className="mt-6 max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5"
+        >
+          <div className="flex items-center gap-2 font-semibold text-slate-900">
+            <Lock size={17} />
+            {gate === "unset"
+              ? "Set a passphrase"
+              : "Passphrase"}
+          </div>
+
+          <p className="mt-2 text-sm text-slate-600">
+            {gate === "unset"
+              ? "The scripts can run anything on the Pi, so they are kept behind a passphrase. None is set yet: choose one now."
+              : "Type the passphrase to see, edit and run the scripts."}
+          </p>
+
+          <input
+            type="password"
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            placeholder="Passphrase"
+            autoComplete={
+              gate === "unset" ? "new-password" : "current-password"
+            }
+            className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
+
+          {gate === "unset" && (
+            <input
+              type="password"
+              value={typedAgain}
+              onChange={(event) => setTypedAgain(event.target.value)}
+              placeholder="The same passphrase again"
+              autoComplete="new-password"
+              className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+          )}
+
+          <button
+            type="submit"
+            disabled={gateBusy || typed.length === 0}
+            className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {gate === "unset" ? "Set passphrase" : "Open"}
+          </button>
+
+          {gateError && (
+            <p className="mt-3 text-sm text-red-700">{gateError}</p>
+          )}
+
+          <p className="mt-4 text-xs text-slate-500">
+            Forgotten? On the Pi, delete{" "}
+            <code>runtime/automation_passphrase.json</code>. This page
+            then asks for a new one.
+          </p>
+        </form>
+      )}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {automations.map((automation) => (

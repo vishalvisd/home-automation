@@ -141,6 +141,20 @@ Keep a private copy of `runtime/cameras.json`,
 `runtime/backblaze_credentials.json` and `runtime/watering.json` somewhere
 safe to make that quick.
 
+### Passphrase for the automation scripts
+
+The Automations tab asks for a passphrase. It is set on the first visit
+to that tab; only a salted hash is stored, in
+`runtime/automation_passphrase.json`. On a new drive the tab simply asks
+for a new one.
+
+If the passphrase is forgotten, delete the file on the Pi and open the
+tab again. No restart is needed:
+
+```bash
+rm ~/workspace/home-automation/runtime/automation_passphrase.json
+```
+
 ### Settings outside the Pi
 
 Camera addresses, stream settings made on each camera's own web page and

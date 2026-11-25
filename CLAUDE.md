@@ -175,9 +175,16 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   port 8000) and `/api/ws` (go2rtc's video connection). Never publish
   the rest of go2rtc's port 1984: its own page hands out the stream
   addresses with the camera logins.
-- No login for now, by the owner's choice; he plans one later. Do not
-  lecture him about it. His own limit is that nobody may reach the Mac
-  or other devices on the home network.
+- The automation scripts are behind a passphrase, checked by the
+  backend on every `/api/automations` address
+  (`AutomationPassphraseService`, hash in
+  `runtime/automation_passphrase.json`, check script
+  `tests/check_automation_passphrase.py`). Set on the first visit;
+  forgotten means deleting that file on the Pi. Keep every new
+  automation address behind the same guard.
+- No login on the rest of the page for now, by the owner's choice; he
+  plans one later. Do not lecture him about it. His own limit is that
+  nobody may reach the Mac or other devices on the home network.
 - The Funnel address is `visd-ha.tail64b203.ts.net`. It is the Android
   app's default away address.
 - Only the owner can test from outside, on mobile data.

@@ -24,6 +24,12 @@ AUTOMATION_RUNTIME_DIRECTORY = (
     RUNTIME_DIRECTORY / "automations"
 )
 
+# Salted hash of the passphrase that guards the automation scripts.
+# Delete this file on the Pi to set a new passphrase.
+AUTOMATION_PASSPHRASE_FILE = (
+    RUNTIME_DIRECTORY / "automation_passphrase.json"
+)
+
 CAMERA_SETTINGS_FILE = RUNTIME_DIRECTORY / "cameras.json"
 CAMERA_PRESET_STATE_FILE = (
     RUNTIME_DIRECTORY / "camera_preset_state.json"

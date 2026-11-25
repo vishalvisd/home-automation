@@ -147,6 +147,18 @@ far:
 | No port forwarding, nothing opened inbound on the ZTE router | He wants no way from the internet into the home network. The line has no fixed public address either |
 | No login while this is being built; login and other protection are added later | Owner's call. He does not mind much if someone reaches the Pi page. What he does mind is anyone reaching the Mac or other devices on the home network |
 
+### Passphrase on the automation scripts (26 Nov 2026)
+
+| Decision | Reason |
+|---|---|
+| The Automations tab asks for a passphrase; nothing else on the page does | The scripts can run anything on the Pi, and the page is now reachable from the internet. The owner wants this one small protection for now |
+| The backend checks it on every address that shows, edits or runs a script, not only the page | A screen alone would stop nobody who calls the address directly |
+| The first visit to the tab sets the passphrase; after that it is asked for every time the page is loaded | Owner's design. Until one is set, the script addresses refuse everyone |
+| Only a salted hash is kept, in `runtime/automation_passphrase.json` | No passphrase in git, in chat or in plain text on the Pi |
+| Forgotten: delete that file on the Pi and the tab asks for a new one. There is no "change passphrase" on the page | Owner's design: changing it needs a login to the Pi |
+| A wrong passphrase is answered after one second, one at a time | Guessing over the internet is held to about one try a second |
+| Scripts started by the Pi itself (the schedule) are not affected | The check sits on the web addresses only |
+
 Still open: the sub stream as the default from outside, keeping script editing and the
 Backblaze export away from outside visitors, and the login.
 
