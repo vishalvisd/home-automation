@@ -111,6 +111,9 @@ buttons, and three of them end by themselves.
 | Power off 30 seconds, then hold uploads at least 1 minute (owner's figures); after that wait until the internet answers, 5 minutes at most (23 Nov 2026) | A fibre router can need more than a minute; an upload that fails is deleted, not retried |
 | The restart runs only in the hour after midnight; if the Pi was off at midnight that night is skipped (23 Nov 2026) | The internet must never be cut during the day or the owner's office hours |
 | Uploads in progress finish first and the others wait in RAM, so no cloud clip is lost beyond the recording gap | |
+| The Main Router card has a "Restart router" button: the Pi cuts the power and brings it back by itself after the nightly restart's off time, 30 seconds (25 Nov 2026) | Relay ON for the router is a kill switch: with the router off, no phone or computer can reach the Pi to switch it back, though the Pi keeps running |
+| That button only switches the relay; uploads are not held (25 Nov 2026) | Owner's choice, the simple way. Accepted with it: cloud clips that finish while the router is starting fail and are deleted |
+| The plain Relay ON and Relay OFF buttons for the router stay, in a red box, and Relay ON asks first (25 Nov 2026) | The danger must be evident, and a slip of the finger must not cut the router |
 
 ## Downloader
 

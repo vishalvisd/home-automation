@@ -1,7 +1,7 @@
 import logging
 import socket
 from datetime import datetime
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from time import monotonic
 
 from home_automation.services.camera_settings_service import (
@@ -28,6 +28,10 @@ INTERNET_CHECK_TIMEOUT_SECONDS = 5
 
 # Never hold the uploads longer than this after power is back.
 INTERNET_MAX_WAIT_SECONDS = 300
+
+# The "Restart router" button waits this long before it cuts the power,
+# so the answer to the button press still gets back through the router.
+BUTTON_DELAY_SECONDS = 2
 
 
 class RouterRestartService:
@@ -146,6 +150,72 @@ class RouterRestartService:
             )
 
             return self.status()
+
+    def power_cycle(self) -> dict | None:
+        """
+        For the "Restart router" button: cut the router's power and
+        restore it by itself after router_restart_off_seconds, the same
+        time the nightly restart uses.
+
+        It runs on a thread of its own and returns at once, because the
+        page that asked cannot reach the Pi while the router is off. So
+        the power always comes back without anyone asking for it, which
+        the plain "Relay ON" button cannot promise.
+
+        It only switches the relay. Uploads are not held, so cloud clips
+        that finish while the router is starting fail and are deleted
+        (the owner's choice, docs/decisions.md).
+
+        Returns None when a restart is already running.
+        """
+
+        if not self._run_lock.acquire(blocking=False):
+            return None
+
+        try:
+            off_seconds = self._settings_service.get().router_restart_off_seconds
+
+            Thread(
+                target=self._power_cycle,
+                args=(off_seconds,),
+                name="router-power-cycle",
+                daemon=True,
+            ).start()
+        except Exception:
+            self._run_lock.release()
+            raise
+
+        return {
+            "delay_seconds": BUTTON_DELAY_SECONDS,
+            "off_seconds": off_seconds,
+        }
+
+    def _power_cycle(self, off_seconds: float) -> None:
+        # The lock was taken by power_cycle() and is given back here.
+        try:
+            self._abort.wait(timeout=BUTTON_DELAY_SECONDS)
+
+            if self._abort.is_set():
+                return
+
+            LOGGER.info(
+                "Router restart button: power off for %s seconds",
+                off_seconds,
+            )
+
+            try:
+                self._relay_manager.turn_on(ROUTER_RELAY_KEY)
+                self._abort.wait(timeout=off_seconds)
+            finally:
+                self._relay_manager.turn_off(ROUTER_RELAY_KEY)
+
+            LOGGER.info("Router restart button: power back on")
+
+        except Exception:
+            LOGGER.exception("Router restart button failed")
+
+        finally:
+            self._run_lock.release()
 
     def abort(self) -> None:
         """End a running restart at once; the relay is released."""

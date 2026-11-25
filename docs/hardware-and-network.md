@@ -92,15 +92,25 @@ So the relay was told to switch and the router stayed powered. The
 cause (owner, 24 Nov): he had bypassed the relay himself some time ago,
 so the router's supply did not pass through IN2 at all. He began
 putting it back on 24 Nov; the restart of 25 Nov 00:00 still had no
-effect. Until a test shows the router going dark, the nightly restart
-does nothing.
+effect.
 
-**Testing the router relay by hand.** Never switch "Router power" on
-from the Relay Controls tab or with a request from another device: once
-the router is off, the phone or Mac can no longer reach the Pi to switch
-it off again, and the router stays dark until someone goes to the Pi.
-The test has to run on the Pi itself and finish by itself, even if the
-SSH session drops when the router goes off:
+The owner rewired it on the morning of 25 Nov 2026 and reports that the
+relay now cuts the router. The Pi's own figures agree: all eight
+recorders recovered in the same second, 08:49:19, after his test. The
+first nightly restart that can really work is the one of 26 Nov 00:00;
+expect about two minutes without recording on every camera and one
+recovery per recorder.
+
+**Switching the router relay by hand.** Relay ON for the router is a
+kill switch: once the router is off, the phone or Mac can no longer
+reach the Pi to switch the relay off again, and the router stays dark
+until someone goes to the Pi. Use the "Restart router" button on the
+Main Router card (Relay Controls tab), where the Pi restores the power
+by itself. The plain Relay ON button is in a red box and asks first.
+
+Without the page (backend stopped, or from an SSH session), this does
+the same on the Pi itself and finishes even if the SSH session drops
+when the router goes off:
 
 ```bash
 sudo sh -c 'nohup sh -c "pinctrl set 3 op dl; sleep 10; pinctrl set 3 op dh" >/dev/null 2>&1 &'

@@ -4,6 +4,7 @@ import {
   LoaderCircle,
   Power,
   PowerOff,
+  RotateCw,
   TriangleAlert,
 } from "lucide-react";
 
@@ -16,15 +17,28 @@ export default function RelayCard({ relay }) {
   const Icon = relay.icon;
 
   async function executeCommand(command) {
+    // A relay marked as dangerous asks before it is switched on, and a
+    // restart asks too: neither should happen by a slip of the finger.
+    if (command === "on" && relay.danger && !window.confirm(relay.danger.confirm)) {
+      return;
+    }
+
+    if (command === "restart" && !window.confirm(relay.restart.confirm)) {
+      return;
+    }
+
     setPendingCommand(command);
     setResult(null);
 
     try {
-      await sendRelayCommand(relay.key, command);
+      const answer = await sendRelayCommand(relay.key, command);
 
       setResult({
         type: "success",
-        text: `${relay.channel} received relay ${command.toUpperCase()}.`,
+        text:
+          command === "restart"
+            ? relay.restart.done(answer.off_seconds)
+            : `${relay.channel} received relay ${command.toUpperCase()}.`,
       });
     } catch (error) {
       setResult({
@@ -62,34 +76,77 @@ export default function RelayCard({ relay }) {
         {relay.wiringNote}
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
-        <button
-          type="button"
-          disabled={pendingCommand !== null}
-          onClick={() => executeCommand("on")}
-          className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pendingCommand === "on" ? (
-            <LoaderCircle size={18} className="animate-spin" />
-          ) : (
-            <Power size={18} />
-          )}
-          Relay ON
-        </button>
+      <div className="mt-auto pt-6">
+        {relay.restart && (
+          <div className="mb-4">
+            <button
+              type="button"
+              disabled={pendingCommand !== null}
+              onClick={() => executeCommand("restart")}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pendingCommand === "restart" ? (
+                <LoaderCircle size={18} className="animate-spin" />
+              ) : (
+                <RotateCw size={18} />
+              )}
+              {relay.restart.label}
+            </button>
 
-        <button
-          type="button"
-          disabled={pendingCommand !== null}
-          onClick={() => executeCommand("off")}
-          className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {relay.restart.note}
+            </p>
+          </div>
+        )}
+
+        <div
+          className={
+            relay.danger
+              ? "rounded-2xl border-2 border-red-400 bg-red-100 p-4"
+              : ""
+          }
         >
-          {pendingCommand === "off" ? (
-            <LoaderCircle size={18} className="animate-spin" />
-          ) : (
-            <PowerOff size={18} />
+          {relay.danger && (
+            <p className="mb-3 flex items-start gap-2 text-xs font-medium leading-5 text-red-900">
+              <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+              <span>{relay.danger.note}</span>
+            </p>
           )}
-          Relay OFF
-        </button>
+
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={pendingCommand !== null}
+              onClick={() => executeCommand("on")}
+              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                relay.danger
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
+            >
+              {pendingCommand === "on" ? (
+                <LoaderCircle size={18} className="animate-spin" />
+              ) : (
+                <Power size={18} />
+              )}
+              Relay ON
+            </button>
+
+            <button
+              type="button"
+              disabled={pendingCommand !== null}
+              onClick={() => executeCommand("off")}
+              className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {pendingCommand === "off" ? (
+                <LoaderCircle size={18} className="animate-spin" />
+              ) : (
+                <PowerOff size={18} />
+              )}
+              Relay OFF
+            </button>
+          </div>
+        </div>
       </div>
 
       {result && (

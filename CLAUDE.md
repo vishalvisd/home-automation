@@ -118,7 +118,16 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   `CameraUploadService`). It is for the router's health only.
 - It costs about two minutes of recording on every camera, because every
   camera reaches the Pi through the router. The owner accepts this.
-- It runs only in the hour after midnight. Do not add other triggers.
+- It runs only in the hour after midnight. Do not add other automatic
+  triggers.
+- Relay ON for `router_power` is a kill switch: with the router off,
+  nothing on the home network can reach the Pi to switch it back. The
+  safe way is `POST /api/relays/router_power/restart` (the "Restart
+  router" button), where the Pi restores the power by itself. It only
+  switches the relay and does not hold uploads, by the owner's choice.
+  Never ask the owner to switch that relay on from the page or from
+  another device, and never do it yourself: a preview on the Mac sends
+  its relay commands to the real Pi.
 
 ## Disk copy rules that are deliberate
 

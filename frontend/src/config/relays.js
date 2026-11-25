@@ -25,7 +25,26 @@ export const RELAYS = [
     gpio: 3,
     icon: Router,
     description: "Terrace optical network unit and main router power.",
-    wiringNote: "Relay OFF supplies power through the normally closed contact.",
+    wiringNote:
+      "Relay OFF supplies power through the normally closed contact. Relay ON cuts the router's power.",
+    // The safe way to switch the router off: the Pi brings the power
+    // back by itself, because this page cannot ask for it once the
+    // router is off.
+    restart: {
+      label: "Restart router",
+      note: "Cuts the router's power and brings it back by itself, after the time set for the nightly restart (30 seconds unless changed). The internet and every camera are away for about two minutes.",
+      confirm:
+        "Restart the router now?\n\nThe internet and every camera are away for about two minutes. The power comes back by itself.",
+      done: (seconds) =>
+        `The router's power goes off in a moment for ${seconds} seconds and comes back by itself. This page cannot reach the Pi for about two minutes.`,
+    },
+    // The plain relay buttons stay, inside a red box, and Relay ON asks
+    // first.
+    danger: {
+      note: "Kill switch. Relay ON cuts the router's power and it stays off. With the router off nothing on the home network can reach the Pi, this page included, so Relay OFF cannot be pressed afterwards. Someone has to go to the Pi. Use Restart router instead.",
+      confirm:
+        "Really cut the router's power and leave it off?\n\nThis page will not be able to switch it back on. Someone has to go to the Pi.",
+    },
   },
   {
     key: "camera_power",

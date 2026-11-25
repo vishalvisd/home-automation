@@ -408,8 +408,27 @@ The relay endpoints are intentionally simple:
 
 POST /api/relays/{relay_key}/on
 POST /api/relays/{relay_key}/off
+POST /api/relays/router_power/restart
 
 No relay state is persisted or inferred.
+
+The router is the one relay that must not simply be switched on. Relay ON
+cuts the router's power, and with the router off nothing on the home
+network can reach the Pi to switch the relay off again: the router stays
+dark until someone goes to the Pi. So the router has a third address,
+"restart": the Pi switches the relay on, waits router_restart_off_seconds
+(30 by default, the same time the nightly restart uses) and switches it
+off again by itself, on its own thread. It starts two seconds after the
+request so the answer still gets back, refuses a second request while
+one is running (409), and releases the relay if the backend shuts down.
+It does nothing else: uploads are not held, so cloud clips that finish
+while the router is starting fail and are deleted.
+
+On the Relay Controls tab the Main Router card has a "Restart router"
+button for this. The plain Relay ON and Relay OFF buttons of that card
+sit in a red box that says they are a kill switch, and Relay ON asks
+before it acts. The Automations tab also has a "Restart Router" script,
+which does the same from a script on the Pi with its own off time.
 
 This is especially important for the router and RO purifier because their normally closed wiring means:
 
@@ -1224,6 +1243,7 @@ Relays
 
 POST /api/relays/{relay_key}/on
 POST /api/relays/{relay_key}/off
+POST /api/relays/router_power/restart
 
 Watering
 
