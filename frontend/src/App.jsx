@@ -34,7 +34,7 @@ const TABS = [
   },
   {
     key: "mics",
-    label: "Microphones",
+    label: "Over",
   },
   {
     key: "automations",
