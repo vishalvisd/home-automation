@@ -9,6 +9,7 @@ import {
 import AutomationsPanel from "./components/AutomationsPanel";
 import CameraPanel from "./components/CameraPanel";
 import LiveViewPanel from "./components/LiveViewPanel";
+import MicPanel from "./components/MicPanel";
 import RelayCard from "./components/RelayCard";
 import WateringPanel from "./components/WateringPanel";
 import { RELAYS } from "./config/relays";
@@ -30,6 +31,10 @@ const TABS = [
   {
     key: "watering",
     label: "Panel Cleaning and Plant Watering",
+  },
+  {
+    key: "mics",
+    label: "Microphones",
   },
   {
     key: "automations",
@@ -207,6 +212,16 @@ export default function App() {
           }
         >
           <WateringPanel />
+        </div>
+
+        <div
+          className={
+            activeTab === "mics"
+              ? "block"
+              : "hidden"
+          }
+        >
+          <MicPanel active={activeTab === "mics"} />
         </div>
 
         <div

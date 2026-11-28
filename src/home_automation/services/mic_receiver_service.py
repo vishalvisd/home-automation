@@ -1,4 +1,5 @@
 import logging
+import queue
 import socket
 import time
 from datetime import datetime
@@ -57,9 +58,54 @@ LISTEN_RETRY_SECONDS = 30
 # before its old connection is noticed as dead.
 MAX_CONNECTIONS = MAX_MODULES + 4
 
+# Live listening: how many browsers may listen at once, to all modules
+# together.
+MAX_LIVE_LISTENERS = 3
+
+# Sound waiting for one live listener. A listener that falls further
+# behind than this (one second) loses the oldest sound, so live stays
+# live.
+LIVE_QUEUE_FRAMES = 64
+
+# A listener that has taken nothing for this long has gone away.
+LIVE_STALE_SECONDS = 10
+
+
 
 def _now_iso() -> str:
     return datetime.now(LOCAL_TIME_ZONE).isoformat(timespec="seconds")
+
+
+class LiveUnavailableError(Exception):
+    """Live listening cannot be started for this module right now."""
+
+
+class LiveListener:
+    """One browser listening live to one module."""
+
+    def __init__(self, module_id: str) -> None:
+        self.module_id = module_id
+        self.frames: queue.Queue[bytes] = queue.Queue(LIVE_QUEUE_FRAMES)
+        self.closed = False
+        self.last_taken = time.monotonic()
+
+    def take(self) -> bytes:
+        """
+        The module's raw sound that has arrived since the last call
+        (16-bit, 16000 a second, mono). Empty when there is none yet.
+        Never waits.
+        """
+
+        self.last_taken = time.monotonic()
+        taken = []
+
+        while True:
+            try:
+                taken.append(self.frames.get_nowait())
+            except queue.Empty:
+                break
+
+        return b"".join(taken)
 
 
 class _Session:
@@ -151,6 +197,10 @@ class MicReceiverService:
         self._listening = False
         self._last_error: str | None = None
 
+        # Browsers listening live. Replaced as a whole on every change,
+        # so the sound path can read it without a lock.
+        self._listeners: tuple[LiveListener, ...] = ()
+
         # Connections that have said who they are, by module name.
         self._sessions: dict[str, _Session] = {}
         # Every open connection, also those that have not said it yet.
@@ -207,6 +257,62 @@ class MicReceiverService:
             if session.thread is not current_thread():
                 session.thread.join(timeout=8)
 
+        # Nobody listens live to a module that is off or gone.
+        for listener in self._listeners:
+            module = settings.module(listener.module_id)
+
+            if not settings.enabled or module is None or not module.enabled:
+                self.close_live(listener)
+
+    def open_live(self, module_id: str) -> LiveListener:
+        """
+        Start passing a module's sound on to one browser. The caller
+        keeps calling listener.take() and must call close_live() at the
+        end.
+        """
+
+        with self._lock:
+            module = self._settings.module(module_id)
+
+            if module is None:
+                raise KeyError(module_id)
+
+            if not self._settings.enabled:
+                raise LiveUnavailableError(
+                    "The microphones are switched off."
+                )
+
+            if not module.enabled:
+                raise LiveUnavailableError("This module is switched off.")
+
+            self._drop_stale_listeners()
+
+            if len(self._listeners) >= MAX_LIVE_LISTENERS:
+                raise LiveUnavailableError(
+                    f"{MAX_LIVE_LISTENERS} listeners are already "
+                    "listening live. Stop one first."
+                )
+
+            listener = LiveListener(module_id)
+            self._listeners = (*self._listeners, listener)
+
+        LOGGER.info("Live listening started: %s", module_id)
+
+        return listener
+
+    def close_live(self, listener: LiveListener) -> None:
+        listener.closed = True
+
+        with self._lock:
+            if listener not in self._listeners:
+                return
+
+            self._listeners = tuple(
+                other for other in self._listeners if other is not listener
+            )
+
+        LOGGER.info("Live listening ended: %s", listener.module_id)
+
     def files_in_use(self) -> set[Path]:
         """The files being written right now; never to be deleted."""
 
@@ -227,6 +333,8 @@ class MicReceiverService:
         return in_use
 
     def status(self) -> dict:
+        self._drop_stale_listeners()
+
         with self._lock:
             settings = self._settings
             sessions = dict(self._sessions)
@@ -271,6 +379,9 @@ class MicReceiverService:
         return {
             "enabled": settings.enabled,
             "port": self._port,
+            "live_listeners": [
+                listener.module_id for listener in self._listeners
+            ],
             "listening": listening,
             "last_error": last_error,
             "ffmpeg_found": FFMPEG_BINARY is not None,
@@ -568,7 +679,13 @@ class MicReceiverService:
 
         if module is None or not module.enabled:
             self._stop_recorder(session)
+            self._end_live(session.module_id)
             return
+
+        # Live listeners get the sound as it comes, without the silence
+        # that fills a hole in the stored copy.
+        if self._listeners:
+            self._publish(session.module_id, pcm)
 
         if lost:
             samples_per_frame = len(pcm) // 2
@@ -582,6 +699,41 @@ class MicReceiverService:
                 self._stop_recorder(session)
 
         self._record(session, pcm)
+
+    def _publish(self, module_id: str | None, pcm: bytes) -> None:
+        now = time.monotonic()
+
+        for listener in self._listeners:
+            if listener.module_id != module_id or listener.closed:
+                continue
+
+            if now - listener.last_taken > LIVE_STALE_SECONDS:
+                self.close_live(listener)
+                continue
+
+            try:
+                listener.frames.put_nowait(pcm)
+            except queue.Full:
+                # The browser is behind: the oldest sound makes room.
+                try:
+                    listener.frames.get_nowait()
+                    listener.frames.put_nowait(pcm)
+                except (queue.Empty, queue.Full):
+                    pass
+
+    def _end_live(self, module_id: str | None) -> None:
+        """A module that is switched off is not listened to either."""
+
+        for listener in self._listeners:
+            if listener.module_id == module_id:
+                self.close_live(listener)
+
+    def _drop_stale_listeners(self) -> None:
+        now = time.monotonic()
+
+        for listener in self._listeners:
+            if now - listener.last_taken > LIVE_STALE_SECONDS:
+                self.close_live(listener)
 
     @staticmethod
     def _frames_lost_before(session: _Session, sequence: int) -> int:

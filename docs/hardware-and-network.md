@@ -167,12 +167,12 @@ password is written here or anywhere in the repository.
 
 | | Module 1 | Module 2 |
 |---|---|---|
-| Name it sends | `esp32-mic` (trial firmware, fixed name) | `esp32-mic-2f20` |
+| Name it sends | `esp32-mic-9dd0` | `esp32-mic-2f20` |
 | Board | ESP32-WROOM-32, 30-pin DevKit V1 | A newer 30-pin ESP32 dev board |
 | Microphone | G-SENSE ICS-43434, one microphone | G-SENSE ICS-43434 2CH, two microphones mixed into one |
 | Wi-Fi | `visdgx5ghz_EXT` | `visdgx5ghz_EXT` |
 | Address on 28 Nov 2026 | 192.168.1.13, router binding | 192.168.1.166, router binding |
-| Firmware on 28 Nov 2026 | trial `mic-wifi-1` | trial `mic-wifi-3` |
+| Firmware on 28 Nov 2026 | `mic-module-1` (from `firmware/mic_module`), flashed that evening | trial `mic-wifi-3` |
 | Installed | 21 Nov 2026 | 28 Nov 2026 |
 
 Wiring, the same on every module: microphone VDD to 3V3, GND to GND,

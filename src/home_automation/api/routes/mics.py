@@ -1,7 +1,18 @@
-from typing import Annotated
+import asyncio
+import time
+from typing import Annotated, Literal
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from home_automation.api.dependencies import (
@@ -11,7 +22,17 @@ from home_automation.api.dependencies import (
     get_mic_store_service,
 )
 from home_automation.config.mic_settings import MicSettings
-from home_automation.services.mic_receiver_service import MicReceiverService
+from home_automation.services.mic_download import (
+    FORMATS,
+    DownloadBusyError,
+    DownloadFailedError,
+    download_name,
+    make_download,
+)
+from home_automation.services.mic_receiver_service import (
+    LiveUnavailableError,
+    MicReceiverService,
+)
 from home_automation.services.mic_settings_service import MicSettingsService
 from home_automation.services.mic_store_service import MicStoreService
 from home_automation.services.passphrase_service import (
@@ -25,6 +46,15 @@ router = APIRouter(
     prefix="/api/mics",
     tags=["mics"],
 )
+
+# Live listening looks for new sound this often. A module sends a block
+# every 16 ms, so this adds next to nothing to the delay.
+LIVE_POLL_SECONDS = 0.02
+
+# When a module sends nothing, a live listener gets a little silence
+# this often, so the connection stays in use.
+LIVE_SILENCE_EVERY_SECONDS = 1.0
+LIVE_SILENCE = bytes(512)
 
 
 PassphraseServiceDependency = Annotated[
@@ -256,3 +286,143 @@ def remove_module(
     store.delete_module(module_id)
 
     return settings
+
+
+
+@router.get("/modules/{module_id}/live", dependencies=[PassphraseRequired])
+async def listen_live(
+    module_id: str,
+    request: Request,
+    receiver: ReceiverServiceDependency,
+) -> StreamingResponse:
+    """
+    One module's sound as it arrives, without end: raw samples, signed
+    16-bit, low byte first, mono, 16000 a second. The page plays them
+    itself. Loudness is the page's business; this is the sound as the
+    module sends it.
+    """
+
+    try:
+        listener = receiver.open_live(module_id)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown module: {module_id}",
+        ) from error
+    except LiveUnavailableError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+    async def chunks():
+        quiet_since = time.monotonic()
+
+        try:
+            # Ends when the browser goes away, or when the module is
+            # switched off or removed (the receiver closes the listener).
+            while not listener.closed:
+                if await request.is_disconnected():
+                    break
+
+                sound = listener.take()
+
+                if sound:
+                    quiet_since = time.monotonic()
+                    yield sound
+                    continue
+
+                if (
+                    time.monotonic() - quiet_since
+                    >= LIVE_SILENCE_EVERY_SECONDS
+                ):
+                    quiet_since = time.monotonic()
+                    yield LIVE_SILENCE
+
+                await asyncio.sleep(LIVE_POLL_SECONDS)
+        finally:
+            receiver.close_live(listener)
+
+    return StreamingResponse(
+        chunks(),
+        media_type="application/octet-stream",
+        headers={
+            "Cache-Control": "no-store",
+            # Ask anything in between not to collect the sound first.
+            "X-Accel-Buffering": "no",
+            "X-Sample-Rate": "16000",
+        },
+    )
+
+
+@router.get(
+    "/modules/{module_id}/download",
+    dependencies=[PassphraseRequired],
+)
+def download(
+    module_id: str,
+    service: SettingsServiceDependency,
+    store: StoreServiceDependency,
+    start: Annotated[float, Query(description="seconds since 1970")],
+    end: Annotated[float, Query(description="seconds since 1970")],
+    file_format: Annotated[
+        Literal["mp3", "opus"],
+        Query(alias="format"),
+    ] = "mp3",
+    level: bool = True,
+) -> StreamingResponse:
+    """
+    The stored sound of one module between two moments, as one file.
+
+    MP3 plays everywhere; "level" makes it louder and evens the volume
+    out. Opus is the stored sound itself, joined and not converted, so
+    "level" does nothing there. A hole in the stored sound is simply
+    left out: the file is then shorter than the time asked for.
+    """
+
+    module = service.get().module(module_id)
+
+    if module is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown module: {module_id}",
+        )
+
+    if not end > start:
+        raise HTTPException(
+            status_code=422,
+            detail="The end must be after the start.",
+        )
+
+    end = min(end, time.time())
+    files = store.files_between(module_id, start, end)
+
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No sound is stored for that time.",
+        )
+
+    try:
+        pieces = make_download(files, start, end, file_format, level)
+    except DownloadBusyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+    except DownloadFailedError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+    ending, media_type = FORMATS[file_format]
+    # The file is named by the first sound it really holds.
+    first_sound = max(start, files[0][1])
+    name = download_name(module.name or module.id, first_sound, ending)
+
+    return StreamingResponse(
+        pieces,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "no-store",
+        },
+    )

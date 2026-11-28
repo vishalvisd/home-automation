@@ -39,7 +39,55 @@ GIVE_WAY_MARGIN_MB = 50
 # even if the recorder has not told us its name yet.
 FRESH_FILE_SECONDS = 10
 
+# Two files of one run follow each other without a pause. Where one
+# begins and the other ends can be worked out to well under a tenth of a
+# second (measured), so files closer together than this are one stretch
+# of sound, and anything more is shown as a hole.
+SAME_STRETCH_SECONDS = 0.5
+
 MEGABYTE = 1024 * 1024
+
+
+def opus_seconds(path: Path) -> float:
+    """
+    How much sound an Opus file holds, read from the file itself: the
+    position written in its last page, minus the start-up samples named
+    in its first. Cheap enough to ask for every stored file. 0 when the
+    file cannot be read as Opus.
+    """
+
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(64)
+
+            if head[:4] != b"OggS" or head[28:36] != b"OpusHead":
+                return 0.0
+
+            pre_skip = int.from_bytes(head[38:40], "little")
+
+            handle.seek(0, 2)
+            size = handle.tell()
+            handle.seek(max(0, size - 65536))
+            tail = handle.read()
+    except OSError:
+        return 0.0
+
+    position = len(tail)
+
+    while True:
+        position = tail.rfind(b"OggS", 0, position)
+
+        if position < 0:
+            return 0.0
+
+        # A real page start is followed by version 0.
+        if position + 14 <= len(tail) and tail[position + 4] == 0:
+            break
+
+    granule = int.from_bytes(tail[position + 6:position + 14], "little")
+
+    # Opus counts in 48000ths of a second, whatever the sound's own rate.
+    return max(0.0, (granule - pre_skip) / 48000)
 
 
 @dataclass(frozen=True)
@@ -88,6 +136,9 @@ class MicStoreService:
         self._camera_reserve_mb = camera_reserve_mb
         self._free_bytes = free_bytes or self._ram_free_bytes
         self._reserve_cache: tuple[int | None, float] = (None, 0.0)
+        # Length of each stored file, remembered while the file is
+        # unchanged: path -> (last write, size, seconds).
+        self._seconds_cache: dict[Path, tuple[float, int, float]] = {}
 
         self._lock = RLock()
         self._stop_event = Event()
@@ -208,11 +259,65 @@ class MicStoreService:
         with self._lock:
             shutil.rmtree(self._directory / module_id, ignore_errors=True)
 
+    def files_between(
+        self,
+        module_id: str,
+        start: float,
+        end: float,
+    ) -> list[tuple[Path, float, float]]:
+        """
+        A module's files that hold sound between two moments (seconds
+        since 1970), oldest first: each file's path, the moment its
+        sound begins and its length in seconds.
+        """
+
+        files = [
+            stored
+            for stored in self._files()
+            if stored.module_id == module_id
+        ]
+
+        return [
+            (stored.path, began, seconds)
+            for stored, began, seconds in self._timed(files)
+            if began < end and began + seconds > start
+        ]
+
+    def stretches(self, files: list[StoredFile]) -> list[dict]:
+        """
+        The unbroken stretches of sound in a module's files, so the page
+        can show what is stored and where the holes are.
+        """
+
+        stretches: list[dict] = []
+
+        for _stored, began, seconds in self._timed(files):
+            end = began + seconds
+
+            if (
+                stretches
+                and began - stretches[-1]["end"] <= SAME_STRETCH_SECONDS
+            ):
+                stretches[-1]["end"] = max(stretches[-1]["end"], end)
+            else:
+                stretches.append({"start": began, "end": end})
+
+        return [
+            {
+                "start": round(stretch["start"], 1),
+                "end": round(stretch["end"], 1),
+            }
+            for stretch in stretches
+        ]
+
     def status(self) -> dict:
         settings = self._settings_service.get()
         files = self._files()
 
+        self._forget_seconds_of_deleted(files)
+
         modules: dict[str, dict] = {}
+        files_by_module: dict[str, list[StoredFile]] = {}
 
         for stored in files:
             entry = modules.setdefault(
@@ -227,9 +332,11 @@ class MicStoreService:
             entry["files"] += 1
             entry["bytes"] += stored.size
             entry["newest_at"] = self._iso(stored.modified)
+            files_by_module.setdefault(stored.module_id, []).append(stored)
 
-        for entry in modules.values():
+        for module_id, entry in modules.items():
             entry["mb"] = round(entry.pop("bytes") / MEGABYTE, 1)
+            entry["stretches"] = self.stretches(files_by_module[module_id])
 
         with self._lock:
             return {
@@ -304,6 +411,95 @@ class MicStoreService:
         found.sort(key=lambda stored: (stored.started, stored.module_id))
 
         return found
+
+    def _seconds(self, stored: StoredFile) -> float:
+        cached = self._seconds_cache.get(stored.path)
+
+        if (
+            cached is not None
+            and cached[0] == stored.modified
+            and cached[1] == stored.size
+        ):
+            return cached[2]
+
+        seconds = opus_seconds(stored.path)
+        self._seconds_cache[stored.path] = (
+            stored.modified,
+            stored.size,
+            seconds,
+        )
+
+        return seconds
+
+    def _timed(
+        self,
+        files: list[StoredFile],
+    ) -> list[tuple[StoredFile, float, float]]:
+        """
+        One module's files, oldest first, each with the moment its
+        sound begins and its length in seconds. Files without sound are
+        left out.
+
+        A file's name gives only the second it began in. The exact
+        moment comes from its neighbours, because inside one run the
+        files follow each other without a pause:
+
+        - a file followed by the next file of its run ended where that
+          one began, and that one began exactly on the clock;
+        - the last file of a run began where the one before it ended;
+        - a file alone began at its last write minus its length. (That
+          is not used when a neighbour can tell, because the last file
+          of a run is closed only when the module is noticed to have
+          gone, which can be seconds after its sound ended.)
+        """
+
+        timed: list[tuple[StoredFile, float, float]] = []
+        with_sound = [
+            (stored, self._seconds(stored)) for stored in files
+        ]
+        with_sound = [
+            (stored, seconds) for stored, seconds in with_sound if seconds > 0
+        ]
+
+        previous_end: float | None = None
+
+        for index, (stored, seconds) in enumerate(with_sound):
+            earliest = stored.started
+            latest = stored.started + 0.999
+            began: float | None = None
+
+            if index + 1 < len(with_sound):
+                from_next = with_sound[index + 1][0].started - seconds
+
+                if earliest - 0.05 <= from_next <= latest:
+                    began = from_next
+
+            if (
+                began is None
+                and previous_end is not None
+                and earliest - 0.5 <= previous_end <= latest
+            ):
+                began = previous_end
+
+            if began is None:
+                began = stored.modified - seconds
+
+            began = min(max(began, earliest), latest)
+            previous_end = began + seconds
+
+            timed.append((stored, began, seconds))
+
+        return timed
+
+    def _forget_seconds_of_deleted(self, files: list[StoredFile]) -> None:
+        if len(self._seconds_cache) <= 2 * len(files) + 16:
+            return
+
+        present = {stored.path for stored in files}
+
+        for path in list(self._seconds_cache):
+            if path not in present:
+                self._seconds_cache.pop(path, None)
 
     @staticmethod
     def _start_time(path: Path, fallback: float) -> float:

@@ -213,6 +213,10 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - The microphone part must never stop the backend: if it cannot start
   the backend runs without it, and a damaged `runtime/mics.json` is put
   aside.
+- Live listening is the raw sound passed on by the backend and played
+  by the page (`micLivePlayer.js`); the download is made by ffmpeg from
+  the stored files (`mic_download.py`). Sound cannot be heard from
+  here: ask the owner to listen.
 - `tests/check_mics.py` checks all of it on the Mac with stand-in
   modules (`tests/fake_mic_module.py`); it needs ffmpeg. The firmware,
   the stand-in and the receiver speak the same protocol: change them

@@ -155,9 +155,13 @@ class FakeModule:
         self.sequence += 1
 
     def skip(self, frames: int) -> None:
-        """Sound the module took from its microphone but could not send."""
+        """
+        Sound the module took from its microphone but could not send.
+        The time passes all the same, as it does on a real module.
+        """
 
         self.sequence += frames
+        time.sleep(frames * FRAME_SECONDS)
 
     def send_raw(self, data: bytes) -> None:
         if self._socket is None:

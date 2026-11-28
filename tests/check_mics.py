@@ -17,7 +17,10 @@ health is shown; sound the module could not send becomes silence of
 the same length, and a long hole ends the file; callers that are not
 modules are refused; the same module calling twice replaces itself;
 switching a module off stops the storing but not the connection;
-removing one deletes its sound; the age, size and give-way rules delete
+removing one deletes its sound; a browser can listen live and gets the
+sound as it arrives; the stored sound can be downloaded as MP3 or Opus
+for any stretch of time, louder when asked; the age, size and give-way
+rules delete
 the oldest sound first and never a file being written; the main switch
 closes the port; a busy port and a damaged settings file do not stop
 anything; shutting down finishes the last file.
@@ -28,6 +31,7 @@ To try the page against this stand-in on the Mac (modules call port
     uv run python tests/check_mics.py --serve 8011
 """
 
+import http.client
 import json
 import logging
 import os
@@ -52,11 +56,15 @@ from fastapi import FastAPI
 from fake_mic_module import FakeModule, tone_frames
 
 from home_automation.api.routes import mics
+from home_automation.services import mic_download as download_module
 from home_automation.services import mic_receiver_service as receiver_module
 from home_automation.services import passphrase_service as passphrase_module
 from home_automation.services.mic_receiver_service import MicReceiverService
 from home_automation.services.mic_settings_service import MicSettingsService
-from home_automation.services.mic_store_service import MicStoreService
+from home_automation.services.mic_store_service import (
+    MicStoreService,
+    opus_seconds,
+)
 from home_automation.services.passphrase_service import PassphraseService
 
 
@@ -185,6 +193,62 @@ def call(
             return error.code, json.loads(error.read() or b"null")
         except ValueError:
             return error.code, None
+
+
+def fetch(
+    path: str,
+    passphrase: str | None = None,
+) -> tuple[int, dict, bytes]:
+    """A whole answer that is not JSON: its code, headers and content."""
+
+    headers = {}
+
+    if passphrase is not None:
+        headers["X-Mics-Passphrase"] = quote(passphrase, safe="")
+
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{API_PORT}{path}",
+        headers=headers,
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, dict(response.headers), response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, dict(error.headers), error.read()
+
+
+def open_live(path: str, passphrase: str):
+    """Start listening live, as the page does; close the connection to stop."""
+
+    connection = http.client.HTTPConnection("127.0.0.1", API_PORT, timeout=10)
+    connection.request(
+        "GET",
+        path,
+        headers={"X-Mics-Passphrase": quote(passphrase, safe="")},
+    )
+
+    return connection, connection.getresponse()
+
+
+def loudness(path: Path) -> float:
+    """Mean volume of a sound file in dB (0 is the loudest possible)."""
+
+    result = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-i", str(path),
+            "-af", "volumedetect", "-f", "null", "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    for line in result.stderr.splitlines():
+        if "mean_volume:" in line:
+            return float(line.split("mean_volume:")[1].split("dB")[0])
+
+    return -999.0
 
 
 def duration(path: Path) -> float:
@@ -394,6 +458,165 @@ def check_receiving(backend: Backend, good: str) -> None:
     stored = body["modules"][0]["stored"]
     check("the page is told what is stored for it", stored is not None and stored["files"] == len(files), str(stored))
 
+    worst = max(abs(opus_seconds(path) - duration(path)) for path in files)
+    check("a file's length is read right from the file itself", worst < 0.05, f"{worst:.3f} s off")
+
+    stretches = stored["stretches"]
+    check(
+        "the page is told it is one unbroken stretch of 5 seconds",
+        len(stretches) == 1 and 4.6 <= stretches[0]["end"] - stretches[0]["start"] <= 5.4,
+        str(stretches),
+    )
+    check("...that began when the module began", abs(stretches[0]["start"] - started) <= 1.5, str(stretches))
+
+
+def check_live(backend: Backend, good: str) -> None:
+    name = "esp32-mic-a1b2"
+    path = f"/api/mics/modules/{name}/live"
+
+    code, _, _ = fetch(path)
+    check("live listening needs the passphrase", code == 401, str(code))
+
+    code, _, _ = fetch("/api/mics/modules/esp32-mic-none/live", good)
+    check("live listening to an unknown module is refused", code == 404, str(code))
+
+    time.sleep(1.1)
+    module = FakeModule("127.0.0.1", MODULE_PORT, name)
+    module.connect()
+    thread = stream_in_background(module, 30)
+    wait_until(lambda: module_status(good, name).get("recording") is True)
+
+    connection, response = open_live(path, good)
+
+    started = time.monotonic()
+    received = b""
+
+    while time.monotonic() - started < 2.0:
+        received += response.read(512)
+
+    seconds = len(received) / 2 / 16000
+    check("a live listener gets the sound as fast as it is made", 1.7 <= seconds <= 2.6, f"{seconds:.2f} s of sound in 2 s")
+
+    samples = memoryview(received[: len(received) // 2 * 2]).cast("h")
+    peak = max(max(samples), -min(samples))
+    check("...and it is the module's sound, untouched", 2900 <= peak <= 3000, str(peak))
+
+    _, status = call("GET", "/api/mics/status", passphrase=good)
+    check("the page is told someone is listening", status["live_listeners"] == [name], str(status["live_listeners"]))
+
+    listeners = [backend.receiver.open_live(name) for _ in range(2)]
+
+    try:
+        backend.receiver.open_live(name)
+        refused = False
+    except receiver_module.LiveUnavailableError:
+        refused = True
+
+    check("a fourth listener at once is refused", refused)
+
+    for listener in listeners:
+        backend.receiver.close_live(listener)
+
+    connection.close()
+    check(
+        "when the browser goes, the listening ends by itself",
+        wait_until(lambda: backend.receiver.status()["live_listeners"] == [], 6),
+        str(backend.receiver.status()["live_listeners"]),
+    )
+
+    connection, response = open_live(path, good)
+    response.read(512)
+
+    call("PUT", f"/api/mics/modules/{name}", passphrase=good, body={"name": "", "enabled": False})
+    check(
+        "switching the module off ends the listening",
+        wait_until(lambda: backend.receiver.status()["live_listeners"] == [], 4),
+    )
+    connection.close()
+
+    code, _, _ = fetch(path, good)
+    check("a module that is off cannot be listened to", code == 409, str(code))
+
+    call("PUT", f"/api/mics/modules/{name}", passphrase=good, body={"name": "", "enabled": True})
+
+    module.close()
+    thread.join(timeout=5)
+    wait_until(lambda: module_status(good, name).get("connected") is False)
+
+
+def check_download(backend: Backend, good: str, folder: Path) -> None:
+    name = "esp32-mic-a1b2"
+    base = f"/api/mics/modules/{name}/download"
+
+    stretches = module_status(good, name)["stored"]["stretches"]
+    first = stretches[0]                    # the 5 seconds of the first check
+    start = first["start"] + 1
+    end = first["start"] + 4
+    window = f"start={start}&end={end}"
+
+    code, _, _ = fetch(f"{base}?{window}")
+    check("a download needs the passphrase", code == 401, str(code))
+
+    code, headers, content = fetch(f"{base}?{window}", good)
+    mp3 = folder / "download.mp3"
+    mp3.write_bytes(content)
+    check("a stretch of stored sound can be downloaded", code == 200, str(code))
+    check("...as MP3 unless asked otherwise", codec(mp3) == "mp3" and headers.get("content-type") == "audio/mpeg", codec(mp3))
+    check("...3 seconds were asked for and 3 seconds came", 2.7 <= duration(mp3) <= 3.3, f"{duration(mp3):.2f} s")
+
+    stamp = datetime.fromtimestamp(start, LOCAL_TIME_ZONE).strftime("%Y%m%d_%H%M%S")
+    check(
+        "...named by the module and the start in India time",
+        headers.get("content-disposition") == f'attachment; filename="{name}_{stamp}.mp3"',
+        str(headers.get("content-disposition")),
+    )
+
+    code, headers, content = fetch(f"{base}?{window}&format=opus", good)
+    opus = folder / "download.opus"
+    opus.write_bytes(content)
+    check("the stored Opus itself can be downloaded", code == 200 and codec(opus) == "opus", f"{code} {codec(opus)}")
+    check("...also cut to the time asked for", 2.7 <= duration(opus) <= 3.3, f"{duration(opus):.2f} s")
+
+    code, _, content = fetch(f"{base}?{window}&level=false", good)
+    plain = folder / "download_plain.mp3"
+    plain.write_bytes(content)
+    check(
+        "\"level the volume\" makes the download louder",
+        code == 200 and loudness(mp3) > loudness(plain) + 6,
+        f"{loudness(mp3):.1f} dB against {loudness(plain):.1f} dB",
+    )
+
+    # From before the first sound to now: everything stored, with the
+    # holes between the stretches left out.
+    stored_seconds = sum(stretch["end"] - stretch["start"] for stretch in stretches)
+    code, headers, content = fetch(f"{base}?start={first['start'] - 60}&end={time.time() + 60}&format=opus", good)
+    whole = folder / "download_all.opus"
+    whole.write_bytes(content)
+    check(
+        "all of it at once: every stretch joined, the holes left out",
+        code == 200 and abs(duration(whole) - stored_seconds) <= 0.5,
+        f"{duration(whole):.2f} s against {stored_seconds:.2f} s stored",
+    )
+    stamp = datetime.fromtimestamp(first["start"], LOCAL_TIME_ZONE).strftime("%Y%m%d_%H%M%S")
+    check("...named by the first sound it holds", stamp in str(headers.get("content-disposition")), str(headers.get("content-disposition")))
+
+    code, _, _ = fetch(f"{base}?start={first['start'] - 7200}&end={first['start'] - 3600}", good)
+    check("a time with no stored sound is refused", code == 404, str(code))
+
+    code, _, _ = fetch(f"{base}?start={end}&end={start}", good)
+    check("an end before the start is refused", code == 422, str(code))
+
+    code, _, _ = fetch(f"/api/mics/modules/esp32-mic-none/download?{window}", good)
+    check("a download from an unknown module is refused", code == 404, str(code))
+
+    download_module._one_at_a_time.acquire()
+    code, _, _ = fetch(f"{base}?{window}", good)
+    download_module._one_at_a_time.release()
+    check("a second download at the same time is refused", code == 409, str(code))
+
+    code, _, _ = fetch(f"{base}?{window}", good)
+    check("...and the next one after it works", code == 200, str(code))
+
 
 def check_lost_sound(backend: Backend, good: str) -> None:
     name = "esp32-mic-a1b2"
@@ -431,7 +654,7 @@ def check_lost_sound(backend: Backend, good: str) -> None:
     module = FakeModule("127.0.0.1", MODULE_PORT, name)
     module.connect()
     module.stream(tone_frames(), 1.5)
-    module.skip(3000)                       # 48 seconds not sent
+    module.skip(100)                        # 1.6 seconds not sent: over the limit set for this check
     module.stream(tone_frames(), 1.5)
     module.close()
     wait_until(lambda: module_status(good, name).get("connected") is False)
@@ -757,6 +980,8 @@ def run_checks() -> None:
     passphrase_module.WRONG_PASSPHRASE_DELAY_SECONDS = 0.05
     receiver_module.HELLO_TIMEOUT_SECONDS = 2
     receiver_module.SILENCE_TIMEOUT_SECONDS = 2
+    # Really 30 seconds; a hole longer than this ends the file.
+    receiver_module.MAX_SILENCE_FILL_SECONDS = 1
 
     folder = Path(tempfile.mkdtemp(prefix="mics_check_"))
 
@@ -771,6 +996,8 @@ def run_checks() -> None:
         check_passphrase(backend, good)
         check_receiving(backend, good)
         check_lost_sound(backend, good)
+        check_live(backend, good)
+        check_download(backend, good, folder)
         check_refusals(backend, good)
         module, thread = check_same_module_twice(backend, good)
         check_switch_and_remove(backend, good, module, thread)

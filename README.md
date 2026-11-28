@@ -1129,7 +1129,7 @@ Opening the page on a chosen tab, and the Android app
 
 The page starts on Relay Controls. An address that ends in "?tab=" and a
 tab key starts it on that tab instead: http://<pi>:8000/?tab=live opens
-Live View. The keys are relays, cameras, live, watering and automations;
+Live View. The keys are relays, cameras, live, watering, mics and automations;
 any other value is ignored.
 
 The android/ folder holds a small Android app, visd-HA, that shows this
@@ -1165,10 +1165,9 @@ Room microphones
 Small ESP32 modules with a microphone sit inside wall switch boards.
 The Pi keeps the last two hours of every module's sound in RAM, and the
 page will play a module live and offer the stored sound as a download.
-As of 2026-11-28 the Pi side that receives and stores and the module
-firmware (firmware/mic_module, see firmware/README.md) are written; the
-Microphones tab, live listening and the download are the next steps
-(see docs/decisions.md, "Room microphones").
+The module firmware is in firmware/mic_module (see firmware/README.md).
+Everything is on the Microphones tab of the page. Decisions are in
+docs/decisions.md, "Room microphones".
 
 ESP32 module --(calls the Pi, TCP port 3334)--> MicReceiverService
                                                    |
@@ -1247,6 +1246,34 @@ start, the backend starts without it and its addresses answer 503; a
 damaged runtime/mics.json is put aside and the defaults are used; a
 port that cannot be opened is reported and tried again.
 
+Live listening. GET /api/mics/modules/{id}/live answers with the
+module's raw sound as it arrives, without end (16-bit, 16000 a second,
+mono). The page (micLivePlayer.js) plays it through the browser's audio,
+about half a second behind, and makes it louder there: a loudness
+slider and "Level the volume". Nothing is changed in what is stored.
+At most three browsers listen at once. Listening ends when the browser
+goes, and when the module is switched off or removed. It does not go
+through go2rtc, whose connection is public and has no passphrase.
+
+Download. GET /api/mics/modules/{id}/download?start=&end=&format=&level=
+joins the stored files between two moments (seconds since 1970) into
+one file with ffmpeg (mic_download.py) and sends it as it is made. MP3
+(48 kbps) is the default; "level" makes it four times louder and evens
+the volume out (volume=12dB,dynaudnorm, the version the owner preferred
+by ear). Opus is the stored sound itself, joined and not converted. A
+hole in the stored sound is left out, so the file is then shorter than
+the time asked for. One download at a time; it runs at low priority.
+
+What is stored. The status carries, per module, the unbroken stretches
+of sound (start and end), read from the files themselves, so the page
+shows what can be downloaded and where the holes are.
+
+The Microphones tab (MicPanel.jsx) asks for the passphrase, then shows
+one card per module: connected or not, Wi-Fi signal, microphone level,
+firmware, running time, sound lost on the way, what is stored; the room
+name, the on/off switch, Remove, Listen live and Download. Below are
+the settings. Clock times are shown and typed in Asia/Kolkata.
+
 tests/check_mics.py checks all of this on the Mac with stand-in modules
 (tests/fake_mic_module.py), in about a minute. The stand-in can also be
 pointed at the Pi:
@@ -1263,6 +1290,8 @@ GET    /api/mics/settings
 PUT    /api/mics/settings             enabled, keep_minutes, ram_limit_mb, opus_bitrate_kbps
 PUT    /api/mics/modules/{id}         room name, on or off
 DELETE /api/mics/modules/{id}         forget a module and delete its sound
+GET    /api/mics/modules/{id}/live    the sound as it arrives, without end
+GET    /api/mics/modules/{id}/download  a stretch of stored sound as one file
 
 Frontend
 
@@ -1400,6 +1429,8 @@ GET    /api/mics/settings
 PUT    /api/mics/settings
 PUT    /api/mics/modules/{id}
 DELETE /api/mics/modules/{id}
+GET    /api/mics/modules/{id}/live
+GET    /api/mics/modules/{id}/download
 
 Raspberry Pi process management
 

@@ -254,6 +254,18 @@ run on a module yet. Module 2 moves to the new firmware first;
 module 1 keeps the trial firmware until live listening works in the
 page.
 
+What happened on 28 Nov 2026, in the evening: the owner flashed
+module 1 first, before the Pi was updated. It came up as
+`esp32-mic-9dd0`, reached the Pi as soon as the Pi was updated, and the
+Pi stored its sound (one file a minute, no sound lost). So the firmware
+and step 1 are proven on a real module. Measured then: the ffmpeg of
+one module uses about 50 MB of memory on the Pi; a quiet room needs
+about 8 MB an hour, less than the 12 MB measured on speech. The
+Microphones tab, live listening and the download (steps 3 to 5) were
+then written in one go and tried in a browser on the Mac against
+stand-in modules; on the Pi and by ear they are still to be tried by
+the owner. Module 2 is on the trial firmware until he has.
+
 | Decision | Reason |
 |---|---|
 | The firmware lives in this repository, in `firmware/mic_module`, and a new module is flashed from a clone of it (28 Nov 2026) | Owner's requirement: one place for everything |
