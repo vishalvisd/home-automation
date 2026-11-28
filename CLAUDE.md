@@ -213,6 +213,9 @@ All application scheduling lives in Python threads, not cron or systemd timers.
 - The microphone part must never stop the backend: if it cannot start
   the backend runs without it, and a damaged `runtime/mics.json` is put
   aside.
+- The tab is labelled "Over" on purpose (the owner's choice), so
+  others who see the page do not learn what it is. Never rename it to
+  something telling. In these docs "the Microphones tab" means that tab.
 - Live listening is the raw sound passed on by the backend and played
   by the page (`micLivePlayer.js`); the download is made by ffmpeg from
   the stored files (`mic_download.py`). Sound cannot be heard from

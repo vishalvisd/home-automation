@@ -462,22 +462,30 @@ export default function MicPanel({ active }) {
 
   return (
     <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      {/*
+        Until the passphrase is accepted, nothing on this tab says what
+        it is: the owner does not want others who see the page to learn
+        that the home has room microphones. The tab itself is called
+        "Over" for the same reason. Keep it that way.
+      */}
       <div className="flex items-start gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
-          <Mic size={23} />
+          {gate === "open" ? <Mic size={23} /> : <Lock size={23} />}
         </div>
 
         <div>
           <h2 className="text-xl font-semibold text-slate-950">
-            Microphones
+            Over
           </h2>
 
-          <p className="mt-1 text-sm text-slate-600">
-            The room microphone modules. The Pi keeps the last
-            {" "}{storage ? span(storage.keep_minutes * 60) : "two hours"}{" "}
-            of every module in RAM. Listen live, or download a stretch
-            of it.
-          </p>
+          {gate === "open" && (
+            <p className="mt-1 text-sm text-slate-600">
+              The room microphone modules. The Pi keeps the last
+              {" "}{storage ? span(storage.keep_minutes * 60) : "two hours"}{" "}
+              of every module in RAM. Listen live, or download a stretch
+              of it.
+            </p>
+          )}
         </div>
       </div>
 
@@ -497,8 +505,8 @@ export default function MicPanel({ active }) {
 
           <p className="mt-2 text-sm text-slate-600">
             {gate === "unset"
-              ? "This is the sound of rooms, so it is kept behind a passphrase of its own. None is set yet: choose one now."
-              : "Type the microphone passphrase to see the modules, listen and download."}
+              ? "This part is kept behind a passphrase of its own. None is set yet: choose one now."
+              : "This part asks for a passphrase."}
           </p>
 
           <input
@@ -536,9 +544,8 @@ export default function MicPanel({ active }) {
           )}
 
           <p className="mt-4 text-xs text-slate-500">
-            Forgotten? On the Pi, delete{" "}
-            <code>runtime/mic_passphrase.json</code>. This page then
-            asks for a new one. It is not the automation passphrase.
+            Forgotten? How to set a new one is written in SETUP_PI.md.
+            It is not the automation passphrase.
           </p>
         </form>
       )}

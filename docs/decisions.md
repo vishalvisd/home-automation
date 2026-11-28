@@ -266,6 +266,17 @@ then written in one go and tried in a browser on the Mac against
 stand-in modules; on the Pi and by ear they are still to be tried by
 the owner. Module 2 is on the trial firmware until he has.
 
+Later that evening the owner tried it on the Pi: the tab, live
+listening and a download all work, and he is satisfied. He then flashed
+module 2 (`esp32-mic-2f20`); it passed its trial, reached the Pi and
+shows two microphones. Both modules now run `mic-module-1`. He calls
+this the end of the first phase. Still open from the build order: the
+two router bindings of the modules can be given back (step 6).
+
+| Decision | Reason |
+|---|---|
+| The tab is labelled "Over" in the page, not "Microphones" (owner, 28 Nov 2026) | A name that says nothing, so that others who see the page do not learn that the home has this. The owner made the change himself in `frontend/src/App.jsx`. Do not rename it back. The code, the docs and the addresses keep the word microphone |
+
 | Decision | Reason |
 |---|---|
 | The firmware lives in this repository, in `firmware/mic_module`, and a new module is flashed from a clone of it (28 Nov 2026) | Owner's requirement: one place for everything |
