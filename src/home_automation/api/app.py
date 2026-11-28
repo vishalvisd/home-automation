@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,6 +9,7 @@ from home_automation.api.routes import (
     automations,
     cameras,
     health,
+    mics,
     relays,
     watering,
 )
@@ -24,6 +26,10 @@ from home_automation.config.application import (
     GO2RTC_CONFIG_FILE,
     GO2RTC_SERVICE_NAME,
     LIVE_VIEW_PORT,
+    MIC_LISTEN_PORT,
+    MIC_PASSPHRASE_FILE,
+    MIC_SETTINGS_FILE,
+    MIC_STORAGE_DIRECTORY,
     WATERING_SCHEDULE_STATE_FILE,
     WATERING_SETTINGS_FILE,
     BACKBLAZE_CREDENTIALS_FILE,
@@ -47,6 +53,10 @@ from home_automation.services.camera_settings_service import (
     CameraSettingsService,
 )
 from home_automation.services.live_view_service import LiveViewService
+from home_automation.services.mic_receiver_service import MicReceiverService
+from home_automation.services.mic_settings_service import MicSettingsService
+from home_automation.services.mic_store_service import MicStoreService
+from home_automation.services.passphrase_service import PassphraseService
 from home_automation.services.recording_stats_service import (
     RecordingStatsService,
 )
@@ -75,6 +85,9 @@ from home_automation.services.backblaze_b2_storage_provider import (
 from home_automation.services.cloud_rotation_service import (
     CloudRotationService,
 )
+
+LOGGER = logging.getLogger("home_automation")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -192,6 +205,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.router_restart_service = router_restart_service
     app.state.live_view_service = live_view_service
 
+    mic_receiver_service, mic_store_service = _start_microphones(
+        app,
+        camera_settings_service,
+    )
+
     watering_scheduler_service.start()
     camera_preset_service.start()
     archive_service.start()
@@ -205,6 +223,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
     finally:
+        _stop_microphones(mic_receiver_service, mic_store_service)
         camera_recorder_service.shutdown()
         camera_preset_service.stop()
         camera_upload_service.shutdown()
@@ -214,6 +233,77 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         watering_scheduler_service.stop()
         watering_service.shutdown()
         relay_manager.close()
+
+
+def _start_microphones(
+    app: FastAPI,
+    camera_settings_service: CameraSettingsService,
+) -> tuple[MicReceiverService | None, MicStoreService | None]:
+    """
+    Start the room microphone part. If it cannot start, the rest of the
+    backend runs without it: the cameras must never wait for a
+    microphone.
+    """
+
+    app.state.mic_settings_service = None
+    app.state.mic_passphrase_service = None
+    app.state.mic_receiver_service = None
+    app.state.mic_store_service = None
+
+    try:
+        mic_settings_service = MicSettingsService(MIC_SETTINGS_FILE)
+
+        mic_passphrase_service = PassphraseService(
+            MIC_PASSPHRASE_FILE,
+            label="Microphone",
+        )
+
+        mic_receiver_service = MicReceiverService(
+            mic_settings_service,
+            MIC_STORAGE_DIRECTORY,
+            MIC_LISTEN_PORT,
+        )
+
+        mic_store_service = MicStoreService(
+            mic_settings_service,
+            MIC_STORAGE_DIRECTORY,
+            mic_receiver_service.files_in_use,
+            # The sound gives way a little before the disk copy would
+            # drop a camera clip.
+            lambda: camera_settings_service.get().archive_buffer_reserve_mb,
+        )
+
+        mic_receiver_service.start()
+        mic_store_service.start()
+    except Exception:
+        LOGGER.exception(
+            "The microphones could not be started; the rest of the "
+            "backend runs without them"
+        )
+        return None, None
+
+    app.state.mic_settings_service = mic_settings_service
+    app.state.mic_passphrase_service = mic_passphrase_service
+    app.state.mic_receiver_service = mic_receiver_service
+    app.state.mic_store_service = mic_store_service
+
+    return mic_receiver_service, mic_store_service
+
+
+def _stop_microphones(
+    mic_receiver_service: MicReceiverService | None,
+    mic_store_service: MicStoreService | None,
+) -> None:
+    """Finish the files being written. Never holds up the shutdown."""
+
+    try:
+        if mic_receiver_service is not None:
+            mic_receiver_service.stop()
+
+        if mic_store_service is not None:
+            mic_store_service.stop()
+    except Exception:
+        LOGGER.exception("Error while stopping the microphones")
 
 
 def _legacy_bucket_name(settings_file) -> str:
@@ -240,6 +330,7 @@ def create_app() -> FastAPI:
     application.include_router(watering.router)
     application.include_router(automations.router)
     application.include_router(cameras.router)
+    application.include_router(mics.router)
     # Mount the compiled React application last so API routes and
     # FastAPI documentation routes continue to take precedence.
     if FRONTEND_DIST_DIRECTORY.is_dir():

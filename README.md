@@ -161,6 +161,7 @@ The important repository areas are:
 
 home-automation/
 ├── automation_templates/       # Factory/default standalone automation scripts
+├── firmware/                   # Arduino sketches for the modules that talk to the Pi (room microphones)
 ├── frontend/
 │   ├── src/                    # React source
 │   └── dist/                   # Production build; committed and deployed to Pi
@@ -245,6 +246,8 @@ runtime/
 ├── cloud_rotation_state.json
 ├── go2rtc.yaml
 ├── recording_stats.json     hourly clip counters per camera and copy, written hourly
+├── mics.json                room microphone modules, room names and limits
+├── mic_passphrase.json      salted hash of the microphone passphrase
 └── automations/
     ├── restart_router.py
     ├── restart_cameras.py
@@ -1157,6 +1160,110 @@ POST /api/cameras/live/sync
 
 Changing camera settings is persistent, but recording-pipeline changes take effect the next time recording is started.
 
+Room microphones
+
+Small ESP32 modules with a microphone sit inside wall switch boards.
+The Pi keeps the last two hours of every module's sound in RAM, and the
+page will play a module live and offer the stored sound as a download.
+As of 2026-11-28 the Pi side that receives and stores and the module
+firmware (firmware/mic_module, see firmware/README.md) are written; the
+Microphones tab, live listening and the download are the next steps
+(see docs/decisions.md, "Room microphones").
+
+ESP32 module --(calls the Pi, TCP port 3334)--> MicReceiverService
+                                                   |
+                                                   +-- adds a new module to runtime/mics.json
+                                                   +-- keeps its health for the page
+                                                   +-- MicRecorder (one ffmpeg per module)
+                                                          raw sound -> Opus 32 kbps
+                                                          one file a minute, on the minute
+                                                                |
+                                                                v
+                                          /dev/shm/home-automation/mics/<module>/
+                                                                ^
+                                          MicStoreService: age, size, give way
+
+The module calls the Pi; the Pi never calls a module. So a module needs
+no fixed address and no router binding, and a new one appears in the
+list by itself the first time it is powered. The Pi's own address
+(192.168.1.31) and the port are built into the firmware.
+
+What a module sends (mic_protocol.py): frames of a 2-byte mark, a kind,
+a length and the content. First a hello with its hardware name (like
+esp32-mic-2f20, made from its MAC), firmware version and sample rate.
+Then sound, 16000 samples a second, 16-bit, mono, 256 samples a frame,
+each frame with a counter that also counts the frames the module could
+not send. And every few seconds its health: uptime, Wi-Fi signal, free
+memory, microphone level. The Pi answers nothing.
+
+Receiving (MicReceiverService). One thread listens, one thread serves
+each module. A caller that does not start with a proper hello is hung
+up on. A module that sends nothing for 10 seconds is hung up on too; it
+calls again by itself. The same module calling again replaces its old
+connection. A module switched off in the list stays connected, so its
+health is still seen, but its sound is thrown away. The main switch
+(enabled) closes the port.
+
+Storing (MicRecorder). The raw sound is written to an ffmpeg child,
+which makes Opus at opus_bitrate_kbps and starts a new file on every
+full minute, named by its start in Asia/Kolkata (20261128_190000.opus).
+One recorder lives as long as one unbroken run of sound. A jump in the
+module's counter is filled with silence of the same length, up to 30
+seconds, so the time inside a file stays right; a longer hole ends the
+file. So a hole in the sound is always a hole between files. The sound
+is stored as the module sends it, which is quiet; loudness is added when
+listening or downloading.
+
+Cleaning up (MicStoreService), in this order:
+
+1. age: a file whose sound ended more than keep_minutes ago is deleted;
+2. size: over ram_limit_mb, the oldest minute goes first, whichever
+   module it is from, so every module keeps the same length of history;
+3. giving way: every 5 seconds the free space of the RAM disk is
+   looked at. Under archive_buffer_reserve_mb + 50 MB the oldest
+   minutes are deleted until it is above that again. The disk copy
+   drops a camera clip under archive_buffer_reserve_mb, so the
+   microphone sound gives way first.
+
+A file being written is never deleted.
+
+Nothing is written to the system drive or the USB disk and nothing is
+uploaded. A power cut, a Pi restart or a backend restart loses the
+sound of that time (a backend restart about a minute; the files already
+in RAM stay). Sizes: about 12 MB an hour per module, so two hours of
+four modules are about 100 MB against the default limit of 120 MB.
+
+Settings are in runtime/mics.json: enabled, keep_minutes (120),
+ram_limit_mb (120), opus_bitrate_kbps (32) and the module list (id,
+room name, enabled, first seen).
+
+Passphrase. Every /api/mics address is behind a passphrase of its own
+(PassphraseService, the same code as the automation one, with its own
+file runtime/mic_passphrase.json and its own header X-Mics-Passphrase).
+The first visit sets it; forgotten means deleting that file on the Pi.
+
+The microphones must never disturb the cameras: if this part cannot
+start, the backend starts without it and its addresses answer 503; a
+damaged runtime/mics.json is put aside and the defaults are used; a
+port that cannot be opened is reported and tried again.
+
+tests/check_mics.py checks all of this on the Mac with stand-in modules
+(tests/fake_mic_module.py), in about a minute. The stand-in can also be
+pointed at the Pi:
+
+uv run python tests/fake_mic_module.py --host 192.168.1.31
+
+Microphone API
+
+GET    /api/mics/passphrase           open: whether a passphrase is set
+POST   /api/mics/passphrase           set it the first time
+POST   /api/mics/passphrase/check
+GET    /api/mics/status               modules, health, what is stored
+GET    /api/mics/settings
+PUT    /api/mics/settings             enabled, keep_minutes, ram_limit_mb, opus_bitrate_kbps
+PUT    /api/mics/modules/{id}         room name, on or off
+DELETE /api/mics/modules/{id}         forget a module and delete its sound
+
 Frontend
 
 The React UI uses tabbed navigation so the major control areas are not rendered as one long vertical page. The tab order is intentionally:
@@ -1282,6 +1389,17 @@ GET  /api/cameras/archive/clips
 GET  /api/cameras/archive/file
 GET  /api/cameras/live
 POST /api/cameras/live/sync
+
+Room microphones
+
+GET    /api/mics/passphrase
+POST   /api/mics/passphrase
+POST   /api/mics/passphrase/check
+GET    /api/mics/status
+GET    /api/mics/settings
+PUT    /api/mics/settings
+PUT    /api/mics/modules/{id}
+DELETE /api/mics/modules/{id}
 
 Raspberry Pi process management
 
@@ -1473,6 +1591,21 @@ Persistent camera settings
 
 Camera Day/Night preset scheduling and state
     -> CameraPresetService / runtime/camera_preset_state.json
+
+Room microphone modules calling in, their health
+    -> MicReceiverService + mic_protocol.py
+
+Storing a module's sound (ffmpeg, Opus)
+    -> MicRecorder
+
+Age, size and give-way rules for the stored sound
+    -> MicStoreService
+
+Microphone settings and module list
+    -> MicSettingsService / runtime/mics.json
+
+Passphrases (automation scripts, microphones)
+    -> PassphraseService
 
 Frontend controls and tab navigation
     -> frontend/src

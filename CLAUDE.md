@@ -189,6 +189,47 @@ All application scheduling lives in Python threads, not cron or systemd timers.
   app's default away address.
 - Only the owner can test from outside, on mobile data.
 
+## Room microphone rules that are deliberate
+
+- ESP32 modules in wall switch boards call the Pi on port 3334 and send
+  their sound without end (`MicReceiverService`, frames in
+  `mic_protocol.py`). The Pi never calls a module: no module has a
+  fixed address or a router binding, and none may be given one.
+- The sound is kept in RAM only (`/dev/shm/home-automation/mics`), the
+  last `keep_minutes` per module, as one Opus file a minute written by
+  one ffmpeg per module (`MicRecorder`). Never write it to the system
+  drive or the USB disk, and never upload it.
+- `MicStoreService` deletes by age, then by `ram_limit_mb` (oldest
+  minute of all modules first), and gives way when the RAM disk runs
+  short, before the disk copy would drop a camera clip. The camera
+  clips come first.
+- The stored sound is as the module sent it. Loudness is applied when
+  listening or downloading, never before storing.
+- Every `/api/mics` address is behind the microphone passphrase
+  (`PassphraseService`, hash in `runtime/mic_passphrase.json`), which
+  is not the automation one. Keep every new microphone address behind
+  the same guard. Never route the sound through go2rtc: its connection
+  is public and has no passphrase.
+- The microphone part must never stop the backend: if it cannot start
+  the backend runs without it, and a damaged `runtime/mics.json` is put
+  aside.
+- `tests/check_mics.py` checks all of it on the Mac with stand-in
+  modules (`tests/fake_mic_module.py`); it needs ffmpeg. The firmware,
+  the stand-in and the receiver speak the same protocol: change them
+  together.
+- The module firmware is `firmware/mic_module/mic_module.ino`, built
+  and uploaded by the owner from Arduino IDE (`firmware/README.md`). It
+  can be compiled, not uploaded, with the command-line tool inside
+  Arduino IDE; delete the build folder afterwards.
+- Its Wi-Fi, update and trial (rollback) code is taken over unchanged
+  from the trial firmware and is the only part proven on hardware. Do
+  not change it without the owner asking; a bad build can leave a
+  module dead inside a wall.
+- The Wi-Fi and update passwords live only in
+  `firmware/mic_module/secrets.h`, which git ignores. Never print them,
+  never ask for them, never commit them. Mask those lines when reading
+  the file.
+
 ## Relay rules that are deliberate
 
 - Relay ON/OFF means the relay coil, not the appliance. Some appliances
@@ -224,10 +265,12 @@ his phone.
 src/home_automation/
   api/        FastAPI app, routes, dependency helpers
   config/     pydantic settings models and static hardware config
-  services/   long-lived services (relays, watering, cameras, upload)
+  services/   long-lived services (relays, watering, cameras, upload,
+              room microphones)
 frontend/src/ React UI (tabs: relays, cameras, watering, automations)
 scripts/      Pi setup and update scripts, go2rtc install, LAN camera finder
 automation_templates/  default standalone automation scripts
 downloader/   local Mac/Windows app for the uploaded clips (own venv and UI)
 android/      Android app that shows the Pi's page on Live View (own build)
+firmware/     Arduino sketches for the modules that talk to the Pi
 ```

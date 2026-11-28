@@ -1,4 +1,4 @@
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from home_automation.services.relay_manager import RelayManager
 from home_automation.services.watering_service import WateringService
@@ -38,6 +38,10 @@ from home_automation.services.cloud_rotation_service import (
 from home_automation.services.router_restart_service import (
     RouterRestartService,
 )
+from home_automation.services.mic_receiver_service import MicReceiverService
+from home_automation.services.mic_settings_service import MicSettingsService
+from home_automation.services.mic_store_service import MicStoreService
+from home_automation.services.passphrase_service import PassphraseService
 
 
 def get_relay_manager(request: Request) -> RelayManager:
@@ -121,3 +125,47 @@ def get_router_restart_service(
     request: Request,
 ) -> RouterRestartService:
     return request.app.state.router_restart_service
+
+
+def _mic_service(request: Request, name: str):
+    """
+    A microphone service, or "503" when that part did not start. The
+    backend runs without the microphones rather than not at all.
+    """
+
+    service = getattr(request.app.state, name, None)
+
+    if service is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "The microphone part of the backend did not start. "
+                "See the backend log."
+            ),
+        )
+
+    return service
+
+
+def get_mic_settings_service(
+    request: Request,
+) -> MicSettingsService:
+    return _mic_service(request, "mic_settings_service")
+
+
+def get_mic_passphrase_service(
+    request: Request,
+) -> PassphraseService:
+    return _mic_service(request, "mic_passphrase_service")
+
+
+def get_mic_receiver_service(
+    request: Request,
+) -> MicReceiverService:
+    return _mic_service(request, "mic_receiver_service")
+
+
+def get_mic_store_service(
+    request: Request,
+) -> MicStoreService:
+    return _mic_service(request, "mic_store_service")

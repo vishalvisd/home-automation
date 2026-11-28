@@ -186,6 +186,82 @@ opening Chrome and typing the Pi's address. The app is in `android/`.
 | The name shown for the Pi page and the app is `visd-HA` | The page title used to be "frontend" |
 | Live View always starts with the sound off on every camera, in the app and in a browser; the speaker button on a video turns it on | Four cameras speaking at once when the app opens is not wanted. A browser usually silenced them by itself; the app did not |
 
+## Room microphones (being designed since 28 Nov 2026)
+
+ESP32 boards with an I2S microphone sit inside wall switch boards and
+send their sound over Wi-Fi. Two are installed; the owner wants three or
+four, possibly more. Nothing is built in this repository yet. A trial
+firmware and a Mac test script exist outside it and proved the hardware;
+they are a reference only, and the firmware and the Pi code are written
+from scratch. Decided so far:
+
+| Decision | Reason |
+|---|---|
+| The Pi records every module all the time and keeps the last 2 hours, in RAM only | The owner's design. Nothing is written to the system drive |
+| The sub solution has its own RAM limit. With more modules than the limit allows, every module keeps less than 2 hours | The same RAM holds the camera clips waiting for the disk |
+| Stored as Opus at 32 kbps, mono, 16 kHz (28 Nov 2026) | Measured on a recording from each module: about 12 MB an hour per module, so 2 hours of 4 modules is about 100 MB, against 922 MB raw and about 240 MB as FLAC. The owner compared raw and Opus at 16, 24, 32 and 48 kbps by ear without knowing which was which and found them all acceptable; 32 leaves a margin |
+| The sound is stored as the module sends it. Loudness is applied when listening or downloading, as a setting (28 Nov 2026) | The amount can be changed at any time and a loud sound is never spoiled in the stored copy. Of three louder versions the owner preferred the one that levels the volume by itself |
+| The page can play one chosen module live | The owner's design |
+| Its own downloader, separate from the camera downloader, running on the Pi if the Pi can afford it | Sound only, so it should be light |
+| No DHCP binding for a module. Each module calls the Pi at 192.168.1.31 and says its name (28 Nov 2026) | The main router holds 10 bindings and all are used. The Pi's binding is the one that always stays. A new module then needs nothing on the router, and no module has an open sound port on the home network |
+| Sound lost during a network fault, Pi downtime or a power cut is accepted, but everything must come back by itself afterwards | Owner's call |
+| Every microphone part of the page is behind a passphrase of its own, not the automation one | The page is reachable from the internet, and this is the sound of rooms |
+| Voice commands are not part of this | The owner's design as described on 28 Nov 2026; the earlier trial had them as a goal |
+| It runs inside the existing backend, not as a service of its own (28 Nov 2026) | One service, as the project is built. Accepted with it: every backend restart stops the sound recording for about a minute, as it does the cameras, and a microphone update costs the cameras that minute. The stored sound is kept as files in RAM, so a restart does not lose the 2 hours |
+
+Encoding load, measured on the Pi on 28 Nov 2026: ffmpeg turned 600
+seconds of test noise into Opus at 32 kbps in 10.5 seconds, using 12.6
+seconds of processor time. That is about 2 % of one core for one
+module, so about 8 % of one core for four. The Pi's ffmpeg has the Opus
+encoder (libopus). Not measured: the memory of one ffmpeg per module.
+
+| For live listening the page fetches the raw sound from the backend and plays it itself; not go2rtc, not a plain browser audio player (28 Nov 2026) | About half a second of delay and it sits behind the microphone passphrase. go2rtc's connection is public without a passphrase, so anyone with the address could listen. A plain audio player lags 2 to 10 seconds. Accepted with it: from outside the home it uses about 115 MB of data an hour |
+
+| The downloader is part of the Pi page, in a Microphones tab behind the microphone passphrase (28 Nov 2026) | No separate app to start on the Mac |
+| A download is one module, from a start time to an end time inside the stored 2 hours. The page first shows which times are stored and where the gaps are | One file per module |
+| The file is MP3 by default, or the stored Opus file without conversion | MP3 plays on every phone and computer |
+| "Level the volume" is a tick box on the download, on by default | The stored sound stays as the module sent it |
+| The file name is the module's name and the start time in Asia/Kolkata | |
+| Nothing is kept on the Pi beyond the 2 hours; a download is the only way to keep a recording | RAM only |
+
+| A module sends its own hardware name, made from its MAC (like `esp32-mic-2f20`). One firmware for every module (28 Nov 2026) | No edit per module |
+| The first time the Pi sees a module it is added to the list and recorded straight away, with no button to press | Simpler, and the owner installs every module himself. Accepted with it: any device on the home network that speaks the same way is taken for a module; it can use part of the RAM limit but cannot hear anything |
+| The room name is typed in the page and kept on the Pi, not in the module | One firmware for all |
+| Each module has a switch in the page; switched off, the Pi ignores it although it keeps calling | A module in a wall cannot be unplugged |
+| The page shows each module's health: connected or not, last seen, Wi-Fi signal, firmware version, microphone level | A module can hang after a power cut and nobody sees it in a wall |
+| The RAM limit is 120 MB by default, a setting in the page (28 Nov 2026) | Four modules for 2 hours need 100 to 115 MB |
+| When the limit is reached the oldest minute goes first, across all modules | Every module keeps the same length of history |
+| If the RAM disk runs short anyway, the microphone sound gives way before any camera clip is dropped | The disk copy comes first. Accepted with it: before dawn, when the waiting camera clips are largest, a disk batch may start a little earlier than before |
+
+| The modules call port 3334 on the Pi, and only ever send; the Pi sends nothing back (28 Nov 2026) | One port, one direction. The port is not published through Tailscale Funnel, so it exists on the home network only |
+| The module sends its own health with the sound (signal, uptime, microphone level, firmware) | The Pi needs no second connection to a module and no module address |
+| Sound a module could not send is stored as silence of the same length, up to 30 seconds; a longer hole ends the file | The time inside a file stays right, and a hole is always seen as a hole |
+| The Microphones settings have one main switch; off closes the port (28 Nov 2026) | Added by the assistant, not asked for by the owner: a way to stop the whole part from the page if it ever misbehaves beside the cameras |
+| If the microphone part cannot start, the backend starts without it | The cameras must never wait for a microphone |
+
+The cost of making an MP3 on the Pi is an estimate (a minute or two of
+one core for the full 2 hours), not measured.
+
+Build order, agreed 28 Nov 2026: (1) the Pi side that receives, stores
+and cleans up, checked with a stand-in module; (2) the new firmware;
+(3) the Microphones tab; (4) live listening; (5) the download;
+(6) the second module, freeing the two router bindings the trial
+modules hold. Step 1 is written and checked on the Mac
+(`tests/check_mics.py`); it is not on the Pi yet. The firmware of
+step 2 is written too (`firmware/mic_module`): it compiles, and the
+frames it packs are read correctly by the Pi's code, but it has not
+run on a module yet. Module 2 moves to the new firmware first;
+module 1 keeps the trial firmware until live listening works in the
+page.
+
+| Decision | Reason |
+|---|---|
+| The firmware lives in this repository, in `firmware/mic_module`, and a new module is flashed from a clone of it (28 Nov 2026) | Owner's requirement: one place for everything |
+| The Wi-Fi name, Wi-Fi password and update password are in `secrets.h` beside the sketch, ignored by git; a template is committed | No password in git or in chat |
+| The Wi-Fi, update-over-Wi-Fi and trial (rollback) code is taken over unchanged from the trial firmware; the log on port 23 stays | It is the only part proven by the rollback tests, and a module in a wall cannot be reached by hand |
+| A module never waits for the Wi-Fi when sending: sound that cannot go out within about a quarter of a second is dropped and counted | A stalled connection must not freeze the module or block an update. The Pi stores silence of the same length |
+| The trial still passes on 60 seconds of Wi-Fi alone, not on reaching the Pi | A firmware that cannot reach the Pi can still be replaced over Wi-Fi; one that is rolled back because the Pi was off would be wrong |
+
 ## Decided against
 
 - Buying the official Pi power supply (the 45 W charger copes).

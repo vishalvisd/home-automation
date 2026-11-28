@@ -20,7 +20,8 @@ rebuilt.
 | Main router | ZTE F670L at 192.168.1.5. DHCP bindings are made in its admin page. Internet 100 Mbps. |
 | Internet line | Basic unlimited 100 Mbps plan, no fixed public address; it can change at any time (owner). Checked from the Mac on 25 Nov 2026: a trace to the public address is passed on by the ZTE, which suggests the provider shares one address between customers. Not confirmed on the ZTE's own page. The line also has IPv6. |
 | Remote access | Tailscale Funnel on the Pi, machine name `visd-ha`, set up with `scripts/install_tailscale.sh` (see `SETUP_PI.md`). Public port 443 only: `/` goes to the page on :8000, `/api/ws` to go2rtc's video connection on :1984. `sudo tailscale funnel status` on the Pi shows the address. Key expiry for the Pi must be disabled on Tailscale's site. Installed on 25 Nov 2026 on the owner's existing Tailscale account. Measured that evening from the Mac through the relay: the page and the video connection work; go2rtc's own addresses (`/api/config`, `/api/streams`) answer 404; the four main streams arrived at 4.8 Mbit/s together against 5.2 directly at home, the four sub streams at 1.1 Mbit/s; video starts after about 2 seconds against under 1 at home. The owner then opened it on his phone on mobile data and it works, and he disabled key expiry for `visd-ha` on Tailscale's site (25 Nov 2026). The Android app with both addresses was tried by the owner on home Wi-Fi and on mobile data and opens on both (25 Nov 2026). |
-| Access points | D-Link DIR-615 at 192.168.1.7, TP-Link Deco at 192.168.1.14. |
+| Access points | D-Link DIR-615 at 192.168.1.7, TP-Link Deco at 192.168.1.14. Wi-Fi names as told by the owner on 28 Nov 2026: `visdgx5ghz_EXT` is the access point at 192.168.1.7 (no router binding); `visd2f_2.4ghz` is a TP-Link TL-WR841N at 192.168.1.9 (router binding, which the owner thinks is not needed). |
+| Router bindings | The ZTE holds 10 DHCP bindings and all 10 are used (owner, 28 Nov 2026). The Pi's binding is the one that must always stay. |
 | USB disk | Toshiba MQ01UBD100 1 TB 2.5", bus powered, ext4, label `cctv`. Mounted at `/mnt/cctv` only during batches. Parks with `hdparm -y`. SMART needs `-d sat,16`. `hdparm -C` lies on this enclosure; use `smartctl -d sat,16 -n standby -i`. |
 | Relay board, watering | See `README.md`. The camera power relay (IN3) exists but the current cameras are powered separately. |
 
@@ -157,6 +158,51 @@ folder. It was used once to confirm by ear and touch that `hdparm -y`
 really stops the disk. It is not in the repository and is not needed to
 rebuild a Pi; the disk activity log does the same job now.
 
+## Room microphone modules
+
+ESP32 boards with an I2S microphone, inside wall switch boards, powered
+from the mains through a small 5 V supply. Decisions are in
+`docs/decisions.md` under "Room microphones". No Wi-Fi or update
+password is written here or anywhere in the repository.
+
+| | Module 1 | Module 2 |
+|---|---|---|
+| Name it sends | `esp32-mic` (trial firmware, fixed name) | `esp32-mic-2f20` |
+| Board | ESP32-WROOM-32, 30-pin DevKit V1 | A newer 30-pin ESP32 dev board |
+| Microphone | G-SENSE ICS-43434, one microphone | G-SENSE ICS-43434 2CH, two microphones mixed into one |
+| Wi-Fi | `visdgx5ghz_EXT` | `visdgx5ghz_EXT` |
+| Address on 28 Nov 2026 | 192.168.1.13, router binding | 192.168.1.166, router binding |
+| Firmware on 28 Nov 2026 | trial `mic-wifi-1` | trial `mic-wifi-3` |
+| Installed | 21 Nov 2026 | 28 Nov 2026 |
+
+Wiring, the same on every module: microphone VDD to 3V3, GND to GND,
+SCK to GPIO 14, WS to GPIO 15, SD to GPIO 32 (and L/R to GND on the
+one-microphone board). The blue LED on GPIO 2 is steady when Wi-Fi is
+connected.
+
+The trial firmware waits for a listener on its own port 3333, which is
+why each module has a router binding today. The new firmware calls the
+Pi instead, at 192.168.1.31 port 3334, so a module needs no fixed
+address. When both modules run it, their two bindings can be given
+back (step 6 of the build order).
+
+Known hardware faults, from the trial:
+
+- Module 1 sometimes hangs on a cold start after a power cut (red light
+  only) until its power is switched off and on. A restart by software
+  is fine. The page will show a module that is not connected.
+- A large capacitor on the 3V3 pin stops module 1 from starting.
+- Powered through a USB hub the board browns out; plug it into the Mac
+  directly.
+- A microphone level of 0 has twice been a loose wire.
+- An access point that shows a module as connected while nothing can
+  reach it has been cured by restarting that access point.
+
+Sound quality, measured in the trial: Wi-Fi adds a hum at 62.5 Hz and
+its multiples to the microphone; a ceiling fan is louder than a soft
+voice at 2 to 3 metres and covers the same range as speech. The sound
+is very quiet as sent; loudness is added when listening.
+
 ## Cloud accounts as they stand
 
 Seven Backblaze accounts are entered in the Pi UI; four are enabled and
@@ -262,6 +308,12 @@ ran at 255 to 300 MB an hour by night and about 420 by day, about
 RAM: the Pi has 3.8 GB; `/dev/shm` (the RAM disk) is 1.9 GB. With four
 cameras one 30-minute batch is about 1.1 GB of waiting clips, and up to
 1.4 GB before dawn (see above).
+
+Room microphones, measured on 28 Nov 2026 on a recording from each
+module: Opus at 32 kbps needs about 12 MB an hour per module, so the
+2 hours kept are about 25 MB per module and about 100 MB for four
+(limit 120 MB). Raw sound would be 115 MB an hour per module, FLAC 28
+to 31. Encoding one module costs about 2 % of one core of the Pi.
 
 - Each Backblaze account has 10 GB free; a day's cloud copy goes to one
   account, so the daily cloud total should stay under 10 GB.

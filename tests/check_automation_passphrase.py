@@ -39,7 +39,7 @@ from fastapi import FastAPI
 
 from home_automation.api.routes import automations
 from home_automation.config.application import AUTOMATION_TEMPLATE_DIRECTORY
-from home_automation.services import automation_passphrase_service as module
+from home_automation.services import passphrase_service as module
 from home_automation.services.automation_passphrase_service import (
     AutomationPassphraseService,
 )

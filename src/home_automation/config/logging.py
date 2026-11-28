@@ -7,6 +7,7 @@ class IgnorePollingRequestsFilter(logging.Filter):
     IGNORED_PATHS = (
         "/api/watering/status",
         "/api/cameras/recording/status",
+        "/api/mics/status",
     )
 
     def filter(self, record: logging.LogRecord) -> bool:

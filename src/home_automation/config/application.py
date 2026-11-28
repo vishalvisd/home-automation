@@ -50,3 +50,16 @@ DISK_ACTIVITY_LOG_FILE = RUNTIME_DIRECTORY / "disk_activity.csv"
 GO2RTC_CONFIG_FILE = RUNTIME_DIRECTORY / "go2rtc.yaml"
 GO2RTC_SERVICE_NAME = "go2rtc"
 LIVE_VIEW_PORT = 1984
+
+# Room microphones. The module list and the limits, edited from the UI.
+MIC_SETTINGS_FILE = RUNTIME_DIRECTORY / "mics.json"
+# Salted hash of the passphrase that guards everything about the
+# microphones. Delete this file on the Pi to set a new passphrase.
+MIC_PASSPHRASE_FILE = RUNTIME_DIRECTORY / "mic_passphrase.json"
+# The stored sound: RAM only, like the camera clips, one folder per
+# module. It must be on the same RAM disk as the camera clips, because
+# the sound gives way when that disk runs short.
+MIC_STORAGE_DIRECTORY = Path("/dev/shm/home-automation/mics")
+# The port every module calls. The firmware has the Pi's address and
+# this number built in; change both together.
+MIC_LISTEN_PORT = 3334

@@ -136,7 +136,8 @@ then Start Recording.
 ### Runtime files
 
 `runtime/` is not in git. On a new drive, re-enter in the UI: the camera
-list with its stream URLs, the Backblaze accounts, the watering settings.
+list with its stream URLs, the Backblaze accounts, the watering settings,
+the room names of the microphone modules.
 Keep a private copy of `runtime/cameras.json`,
 `runtime/backblaze_credentials.json` and `runtime/watering.json` somewhere
 safe to make that quick.
@@ -153,6 +154,26 @@ tab again. No restart is needed:
 
 ```bash
 rm ~/workspace/home-automation/runtime/automation_passphrase.json
+```
+
+### Room microphones
+
+Nothing to install: the sound is stored with ffmpeg, which
+`scripts/setup_pi.sh` already installs. The Pi listens for the modules
+on port 3334 (home network only).
+
+`runtime/mics.json` holds the module list with the room names, and the
+limits. On a new drive it starts empty: every module that is powered
+calls the Pi and is added by itself within seconds; only the room names
+have to be typed again in the page.
+
+The Microphones part of the page asks for a passphrase of its own, set
+on the first visit; only a salted hash is stored, in
+`runtime/mic_passphrase.json`. If it is forgotten, delete the file on
+the Pi and open that part of the page again. No restart is needed:
+
+```bash
+rm ~/workspace/home-automation/runtime/mic_passphrase.json
 ```
 
 ### Settings outside the Pi

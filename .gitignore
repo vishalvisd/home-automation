@@ -26,3 +26,11 @@ __pycache__/
 
 # Local Claude Code session files
 .claude/
+
+# Module firmware: the WiFi and update passwords live only in secrets.h
+firmware/**/secrets.h
+# Files Arduino IDE drops into a sketch folder
+firmware/**/debug.cfg
+firmware/**/debug_custom.json
+firmware/**/*.svd
+firmware/**/build/
